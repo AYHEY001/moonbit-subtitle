@@ -1,4 +1,6 @@
+# 构建产物。旧版 moon 用 target/，0.1.2026 之后的版本用 _build/
 target/
+_build/
 .mooncakes/
 *.wasm
 *.exe
