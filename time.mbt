@@ -11,24 +11,91 @@
 /// MoonBit 核心库没有内置正则，`moonbitlang/regexp` 目前还是 alpha 状态。
 
 ///|
+/// 把纯数字串换算成整数。空串，或者含有非数字字符，都返回 `None`。
+///
+/// 核心库没有字符串转整数的接口（`strconv` 包是空的），所以自己按位累加。
+/// 这里不做负数、正号、前导空白这些处理：时间戳的每一段都只可能是数字。
+fn digits_to_int(v : StringView) -> Int? {
+  if v.is_empty() {
+    None
+  } else {
+    let mut acc = 0
+    let mut ok = true
+    for c in v.iter() {
+      if c.is_ascii_digit() {
+        acc = acc * 10 + (c.to_int() - 48)
+      } else {
+        ok = false
+      }
+    }
+    if ok { Some(acc) } else { None }
+  }
+}
+
+///|
 /// 把 `00:01:23,456` 或 `00:01:23.456` 解析为毫秒数。
 /// 格式不合法时返回 `None`。
 ///
-/// 参数名前面带下划线表示"暂时没用到"。实现的时候把下划线去掉，
-/// 编译器就不再认为它是闲置参数了。
-pub fn parse_timestamp(_raw : String) -> Int? {
-  // TODO(D2)：String::split 切成 [时, 分, 秒毫秒]，
-  // 第三段再按 ',' 或 '.' 切成秒和毫秒。
-  // 边界条件：毫秒必须恰好三位；时分秒必须是纯数字；空串要拒掉。
-  None
+/// 宽容的地方：两端空白、毫秒分隔符用逗号还是句点、小时超过两位。
+/// 不放宽的地方：毫秒必须恰好三位，分和秒必须小于 60。
+pub fn parse_timestamp(raw : String) -> Int? {
+  // 先把毫秒分隔符统一成句点，省得分两套逻辑
+  let normalized = raw.trim().to_owned().replace_all(old=",", new=".")
+  let parts = normalized.split(":").to_array()
+  if parts.length() != 3 {
+    return None
+  }
+  // 第三段是「秒.毫秒」
+  let sec_parts = parts[2].split(".").to_array()
+  if sec_parts.length() != 2 {
+    return None
+  }
+  let millis_text = sec_parts[1]
+  if millis_text.char_length() != 3 {
+    return None
+  }
+  match (
+    digits_to_int(parts[0]),
+    digits_to_int(parts[1]),
+    digits_to_int(sec_parts[0]),
+    digits_to_int(millis_text),
+  ) {
+    (Some(h), Some(m), Some(s), Some(ms)) =>
+      if m < 60 && s < 60 {
+        Some(h * 3600000 + m * 60000 + s * 1000 + ms)
+      } else {
+        None
+      }
+    _ => None
+  }
+}
+
+///|
+/// 左侧补零到指定宽度。
+fn pad_left(value : Int, width : Int) -> String {
+  let mut out = value.to_string()
+  while out.length() < width {
+    out = "0" + out
+  }
+  out
 }
 
 ///|
 /// 把毫秒数格式化成 SRT 风格的时间戳 `00:01:23,456`。
 /// 负数一律按 0 处理。
-pub fn format_timestamp(_ms : Int) -> String {
-  // TODO(D2)
-  ""
+pub fn format_timestamp(ms : Int) -> String {
+  let total = if ms < 0 { 0 } else { ms }
+  let hours = total / 3600000
+  let minutes = total % 3600000 / 60000
+  let seconds = total % 60000 / 1000
+  let millis = total % 1000
+  pad_left(hours, 2) +
+  ":" +
+  pad_left(minutes, 2) +
+  ":" +
+  pad_left(seconds, 2) +
+  "," +
+  pad_left(millis, 3)
 }
 
 ///|
