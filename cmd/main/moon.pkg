@@ -1,0 +1,5 @@
+import {
+  "haiou/moonbit-subtitle" @lib,
+}
+
+pkgtype(kind: "executable")

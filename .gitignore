@@ -1,0 +1,9 @@
+target/
+.mooncakes/
+*.wasm
+*.exe
+*.dll
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
