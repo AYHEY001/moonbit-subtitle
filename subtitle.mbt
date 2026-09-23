@@ -27,7 +27,7 @@ pub struct Subtitle {
 /// 构造一份字幕。`pub struct` 在别的包里不能直接构造，
 /// 所以必须留这么一个公开的入口，否则这个库对外就不可用了。
 pub fn Subtitle::from_cues(cues : Array[Cue]) -> Subtitle {
-  { cues }
+  { cues, }
 }
 
 ///|
@@ -74,7 +74,7 @@ pub fn Subtitle::duration_ms(self : Subtitle) -> Int {
 
 test "from_cues 能构造字幕" {
   let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2000, text: "你好" }])
-  inspect(s.cues.len(), content="1")
+  inspect(s.cues.length(), content="1")
 }
 
 test "shift 整体延后" {

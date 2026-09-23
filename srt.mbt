@@ -41,7 +41,7 @@ let sample_srt : String =
 test "parse_srt 解析出两条字幕" {
   let r = parse_srt(sample_srt)
   let ok = match r {
-    Ok(s) => s.cues.len() == 2
+    Ok(s) => s.cues.length() == 2
     Err(_) => false
   }
   inspect(ok, content="true")
@@ -50,7 +50,7 @@ test "parse_srt 解析出两条字幕" {
 test "parse_srt 丢掉文件开头的 BOM" {
   let with_bom = "\u{FEFF}" + sample_srt
   let ok = match parse_srt(with_bom) {
-    Ok(s) => s.cues.len() == 2
+    Ok(s) => s.cues.length() == 2
     Err(_) => false
   }
   inspect(ok, content="true")
@@ -59,7 +59,7 @@ test "parse_srt 丢掉文件开头的 BOM" {
 test "parse_srt 能吃下 CRLF 换行" {
   let crlf = "1\r\n00:00:01,000 --> 00:00:04,000\r\n第一行\r\n\r\n"
   let ok = match parse_srt(crlf) {
-    Ok(s) => s.cues.len() == 1
+    Ok(s) => s.cues.length() == 1
     Err(_) => false
   }
   inspect(ok, content="true")
