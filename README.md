@@ -25,14 +25,16 @@ SRT 看着简单，实际从字幕组、剪辑软件、在线平台导出的文�
 | 模块 | 状态 |
 |---|---|
 | `time.mbt` 时间戳解析与格式化 | 完成 |
+| `text.mbt` 两种格式共用的文本处理 | 完成 |
 | `subtitle.mbt` 数据模型与时间轴变换 | 完成 |
 | `srt.mbt` SRT 解析与渲染 | 完成 |
 | `vtt.mbt` WebVTT 解析与渲染 | 完成 |
+| `markup.mbt` 标记剥离与实体解码 | 完成 |
 | `duration.mbt` 时间量解析（`1.5s` / `500ms`） | 完成 |
 | `cmd/main` 命令行工具 | 完成 |
 | `property_wbtest.mbt` 属性测试 | 完成 |
 
-`moon test` 全部通过：80 项，其中 7 项是 quickcheck 属性测试，
+`moon test` 全部通过：97 项，其中 8 项是 quickcheck 属性测试，
 覆盖往返一致性与时间轴不变量（详见 [property_wbtest.mbt](property_wbtest.mbt)）。
 
 ## 构建与测试
@@ -50,7 +52,7 @@ moon run cmd/main   # 运行命令行程序
 
 ## 命令行的用法
 
-`shift`、`normalize`、`convert` 都按输入格式写回：VTT 进去还是 VTT 出来，
+`shift`、`normalize`、`convert`、`strip` 都按输入格式写回：VTT 进去还是 VTT 出来，
 要换格式显式写 `convert`。不给 `-o` 就打到标准输出。
 
 `examples/messy.srt` 是一份故意做脏的文件：带 BOM、CRLF、跳号、
@@ -96,6 +98,28 @@ WEBVTT
 $ moon run cmd/main -- convert examples/messy.srt --to vtt -o out.vtt
 ```
 
+`strip` 把正文里的排版标记剥掉，序号、时间轴、cue 标识都留着，
+这个形态适合喂给翻译、语音合成、全文检索。
+`examples/marked.vtt` 里塞了四种写法：`<b>` 加粗、`<c.yellow>` 类选择器、
+`<v 张三>` 说话人、`<00:00:09.000>` 卡拉OK 时间戳标签，外加 `&amp;` 实体。
+
+```
+$ moon run cmd/main -- strip examples/marked.vtt
+WEBVTT
+
+intro
+00:00:01.000 --> 00:00:04.000
+欢迎收看今晚的节目
+
+speaker
+00:00:05.000 --> 00:00:08.000
+这句由张三说
+A & B 中间还有一个字面的 &lt; 实体
+```
+
+注意最后那行：原文写的是 `&amp;lt;`，解出来是字面的 `&lt;` 而不是 `<`。
+`&amp;` 放在最后一步替换就是为了这个 —— 顺序反了会解两次。
+
 退出码：`0` 正常，`1` 文件处理失败，`2` 参数写错。
 
 ## 设计决定
@@ -115,14 +139,18 @@ $ moon run cmd/main -- convert examples/messy.srt --to vtt -o out.vtt
 **块形状对不上就报错，不做静默猜测。** 一条坏掉的字幕不会被悄悄并进上一条的正文，
 而是带着块号返回错误：`第 2 块：第二行不是时间行：…`。
 
+**默认不剥标记。** 剥掉之后还原不回来，信息一旦在解析阶段丢掉，
+连"要不要剥"这个选择都没了。所以只在 `markup.mbt` 里留一个显式入口，
+解析和渲染都不动标记。
+
 ## 已知限制
 
-- WebVTT 的 cue 标识解析时读掉但不保存，转换一圈回来会消失（输出仍是合法 VTT）
-- WebVTT 正文里的 `<b>` `<c.classname>` 这类标记按原样保留，不做剥离
 - 只按 UTF-8 读文件；GBK 编码的字幕需要先转换
 - 时间精度到毫秒，再小的单位会被截断
-- 命令行工具在 wasm 目标下运行（`moon run cmd/main --target wasm`）；
-  native 目标需要 C 编译器，本机没装
+- 时间行右侧的排版设置（WebVTT 的 `align:start position:10%`、SRT 的 `X1:100 X2:500`）
+  解析时读掉不保存，转换一圈回来会消失，字幕位置回到播放器的默认值
+- WebVTT 的 `NOTE` / `STYLE` / `REGION` 块整块跳过，原文不保留
+- native 目标需要 C 编译器，本机没装，所以 `moon.mod` 里把 `preferred_target` 定为 wasm
 
 ## 许可证
 
