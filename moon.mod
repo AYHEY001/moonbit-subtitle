@@ -4,6 +4,9 @@ readme = "README.md"
 repository = ""
 license = "MIT"
 keywords = [ "subtitle", "srt", "vtt", "text" ]
+
+preferred_target = "wasm"
+
 description = "Pure MoonBit subtitle toolkit: parse, transform and render SRT / WebVTT."
 
 import {
