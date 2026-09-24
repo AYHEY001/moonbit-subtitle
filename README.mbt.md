@@ -61,6 +61,26 @@ test "容错解析" {
 }
 ```
 
+## 非字幕块
+
+`NOTE` / `STYLE` / `REGION` 收进 `extras`，渲染时回到原来的位置。
+
+```mbt check
+///|
+test "非字幕块" {
+  let vtt = "WEBVTT\n\nNOTE 记一笔\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let subtitle = match @moonbit-subtitle.parse_vtt(vtt) {
+    Ok(s) => s
+    Err(_) => panic()
+  }
+  inspect(subtitle.extras.length(), content="1")
+  inspect(subtitle.extras[0].kind, content="NOTE")
+  // 落点是"插在第几条 cue 之前"，0 表示排在所有 cue 之前
+  inspect(subtitle.extras[0].before_pos, content="0")
+  inspect(subtitle.render_vtt(), content=vtt)
+}
+```
+
 ## 时间量解析
 
 命令行里的平移量支持几种写法，也可以在自己代码里直接用。

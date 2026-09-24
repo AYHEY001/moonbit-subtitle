@@ -21,16 +21,50 @@ pub struct Cue {
 }
 
 ///|
+/// 一段不是字幕的原文块：WebVTT 里的 `NOTE` / `STYLE` / `REGION`。
+///
+/// 这些东西播放器不显示，但丢了会改变文件的含义：`STYLE` 没了，依赖 `::cue` 的
+/// 样式就失效；`REGION` 没了，字幕的位置定义就没了；`NOTE` 是给人看的说明，
+/// 通常记着译者或时间轴信息。所以解析时原样收着，渲染时写回原来的位置。
+///
+/// `before_pos` 记的是"插在第几条 cue 之前"，用条数而不是 cue 的序号：
+/// 序号可以被 `normalize` 重排，条数是文件里的物理位置。
+pub struct ExtraBlock {
+  /// `NOTE` / `STYLE` / `REGION` 三者之一。
+  kind : String
+  /// 整块原文，多行用换行连接，不含首尾空行。
+  text : String
+  /// 写回时插在第几条 cue 之前。等于 cue 总数表示排在末尾。
+  before_pos : Int
+}
+
+///|
 /// 一份字幕，按开始时间升序排列。
+///
+/// `extras` 只在 WebVTT 里有内容。SRT 没有对应的语法，解析出来永远是空数组，
+/// 渲染成 SRT 时也会被丢掉 —— 格式里没有地方放它们。
 pub struct Subtitle {
   cues : Array[Cue]
+  extras : Array[ExtraBlock]
 }
 
 ///|
 /// 构造一份字幕。`pub struct` 在别的包里不能直接构造，
 /// 所以必须留这么一个公开的入口，否则这个库对外就不可用了。
+///
+/// 不带 `extras`：非字幕块要么来自解析，要么由 `Subtitle::with_extras` 指定。
 pub fn Subtitle::from_cues(cues : Array[Cue]) -> Subtitle {
-  { cues, }
+  { cues, extras: [], }
+}
+
+///|
+/// 构造一份字幕，同时指定非字幕块。`extras` 里的 `before_pos` 超出 cue 范围时
+/// 统一按"排在末尾"处理，渲染时不会因为越界而丢块。
+pub fn Subtitle::with_extras(
+  cues : Array[Cue],
+  extras : Array[ExtraBlock],
+) -> Subtitle {
+  { cues, extras, }
 }
 
 ///|
@@ -60,7 +94,7 @@ pub fn Subtitle::shift(self : Subtitle, offset_ms : Int) -> Subtitle {
       id: c.id,
     })
   }
-  { cues: out, }
+  { cues: out, extras: self.extras, }
 }
 
 ///|
@@ -95,7 +129,7 @@ pub fn Subtitle::scale(self : Subtitle, speed : Double) -> Subtitle {
         id: c.id,
       })
     }
-    { cues: out, }
+    { cues: out, extras: self.extras, }
   }
 }
 
@@ -135,7 +169,7 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
       None => out.push(c)
     }
   }
-  { cues: out, }
+  { cues: out, extras: self.extras, }
 }
 
 ///|
@@ -159,7 +193,7 @@ pub fn Subtitle::normalize(self : Subtitle) -> Subtitle {
     })
     index = index + 1
   }
-  { cues: out, }
+  { cues: out, extras: self.extras, }
 }
 
 ///|

@@ -94,6 +94,53 @@ fn subtitle_with_ids_of(seed_values : Array[Int]) -> Subtitle {
 }
 
 ///|
+/// 每条字幕前面挂一个 NOTE 块。落点按"前面有几条 cue"给，
+/// 从 0 到 n-1，正好覆盖首条之前到末条之前这一段。
+fn subtitle_with_extras_of(seed_values : Array[Int]) -> Subtitle {
+  let cues : Array[Cue] = []
+  let extras : Array[ExtraBlock] = []
+  let mut i = 0
+  while i < seed_values.length() {
+    let start = positive(seed_values[i] % 3600000)
+    let span = positive(seed_values[i] % 4000)
+    cues.push({
+      index: i + 1,
+      start_ms: start,
+      end_ms: start + span,
+      text: "行" + (i + 1).to_string(),
+      id: "",
+    })
+    extras.push({
+      kind: "NOTE",
+      text: "NOTE 第" + (i + 1).to_string() + "条之前",
+      before_pos: i,
+    })
+    i = i + 1
+  }
+  Subtitle::with_extras(cues, extras)
+}
+
+///|
+/// 两块非字幕内容是否一致：类型、原文、落点都要对上。
+fn same_extras(a : Subtitle, b : Subtitle) -> Bool {
+  if a.extras.length() != b.extras.length() {
+    false
+  } else {
+    let mut ok = true
+    let mut i = 0
+    while i < a.extras.length() {
+      let x = a.extras[i]
+      let y = b.extras[i]
+      if x.kind != y.kind || x.text != y.text || x.before_pos != y.before_pos {
+        ok = false
+      }
+      i = i + 1
+    }
+    ok
+  }
+}
+
+///|
 /// 走一圈 WebVTT，再走一圈 SRT，回到起点。
 ///
 /// 传进来的字幕不能带标识：SRT 里没有放标识的地方，带了必然丢，
@@ -152,6 +199,21 @@ test "带标识的 WebVTT 渲染再解析也是恒等变换" {
     },
     count=200,
     seed=20260927,
+  )
+}
+
+///|
+test "非字幕块渲染再解析不丢" {
+  @quickcheck.check(
+    (seed_values : Array[Int]) => {
+      let s = subtitle_with_extras_of(seed_values)
+      match parse_vtt(s.render_vtt()) {
+        Ok(back) => same_subtitle(s, back) && same_extras(s, back)
+        Err(_) => false
+      }
+    },
+    count=200,
+    seed=20260928,
   )
 }
 

@@ -86,6 +86,9 @@ fn decode_entities(text : String) -> String {
 ///
 /// 只动 `text`，时间、序号、标识原样保留 —— 剥标记是为了拿文本，
 /// 不是为了让时间轴也变样。
+///
+/// `extras` 也不动。`STYLE` 块里装的是 CSS，里面有 `::cue` 这样的选择器、
+/// 也可能有 `>` 子选择器和 `&` 之类的字符，按正文那套规则洗一遍只会把样式弄坏。
 pub fn Subtitle::strip_markup(self : Subtitle) -> Subtitle {
   let out : Array[Cue] = []
   for c in self.cues {
@@ -97,7 +100,7 @@ pub fn Subtitle::strip_markup(self : Subtitle) -> Subtitle {
       id: c.id,
     })
   }
-  { cues: out, }
+  { cues: out, extras: self.extras, }
 }
 
 ///|

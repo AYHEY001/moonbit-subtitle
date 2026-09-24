@@ -34,7 +34,7 @@ SRT 看着简单，实际从字幕组、剪辑软件、在线平台导出的文�
 | `cmd/main` 命令行工具 | 完成 |
 | `property_wbtest.mbt` 属性测试 | 完成 |
 
-`moon test` 全部通过：97 项，其中 8 项是 quickcheck 属性测试，
+`moon test` 全部通过：106 项，其中 9 项是 quickcheck 属性测试，
 覆盖往返一致性与时间轴不变量（详见 [property_wbtest.mbt](property_wbtest.mbt)）。
 
 ## 构建与测试
@@ -120,6 +120,47 @@ A & B 中间还有一个字面的 &lt; 实体
 注意最后那行：原文写的是 `&amp;lt;`，解出来是字面的 `&lt;` 而不是 `<`。
 `&amp;` 放在最后一步替换就是为了这个 —— 顺序反了会解两次。
 
+## WebVTT 里的非字幕块
+
+`NOTE` / `STYLE` / `REGION` 这三类块播放器不显示，但丢了会改变文件的意思：
+`STYLE` 没了，依赖 `::cue` 的样式就失效；`REGION` 没了，字幕位置定义就没了；
+`NOTE` 通常记着译者或时间轴信息。所以它们按原文收进 `Subtitle::extras`，
+渲染时写回原来的位置 —— 夹在两条字幕之间的注释，转一圈回来还在那一对之间。
+
+`examples/noted.vtt` 里两处 `NOTE` 和一个 `STYLE` 块，平移一秒后都还在原位：
+
+```
+$ moon run cmd/main -- info examples/noted.vtt
+文件：examples/noted.vtt
+格式：WebVTT
+条数：2
+总时长：00:00:07,000
+首条：00:00:01,000
+末条：00:00:08,000
+非字幕块：NOTE 2、STYLE 1
+```
+
+```
+$ moon run cmd/main -- shift examples/noted.vtt 1s
+WEBVTT
+
+NOTE 这一份是演示用的，重点是文件里那两处 NOTE 和一个 STYLE 块
+
+STYLE
+::cue { color: yellow }
+
+00:00:02.000 --> 00:00:05.000
+这一行在样式块之后
+
+NOTE 下面换了一个说话人
+
+00:00:06.000 --> 00:00:09.000
+第二行，它前面夹了一条注释
+```
+
+`info` 那行"非字幕块"只在真有这类块时才出现，SRT 和普通 WebVTT 都不会多这一行。
+转成 SRT 时它们会被丢掉 —— SRT 里没有对应的语法。
+
 退出码：`0` 正常，`1` 文件处理失败，`2` 参数写错。
 
 ## 设计决定
@@ -143,13 +184,21 @@ A & B 中间还有一个字面的 &lt; 实体
 连"要不要剥"这个选择都没了。所以只在 `markup.mbt` 里留一个显式入口，
 解析和渲染都不动标记。
 
+**非字幕块按原文收着。** `NOTE` / `STYLE` / `REGION` 不显示，但属于文件内容的一部分。
+位置用"插在第几条字幕之前"记录，而不是某个块的编号 —— 编号会被重排，条数是物理位置。
+
+**剥标记不动 `STYLE` 块。** 那里面是 CSS，有 `::cue > b` 这类选择器，
+按正文的规则洗一遍只会把样式弄坏。
+
 ## 已知限制
 
 - 只按 UTF-8 读文件；GBK 编码的字幕需要先转换
 - 时间精度到毫秒，再小的单位会被截断
 - 时间行右侧的排版设置（WebVTT 的 `align:start position:10%`、SRT 的 `X1:100 X2:500`）
   解析时读掉不保存，转换一圈回来会消失，字幕位置回到播放器的默认值
-- WebVTT 的 `NOTE` / `STYLE` / `REGION` 块整块跳过，原文不保留
+- WebVTT 文件头里的元数据行（`Kind: captions`、`Language: zh`）解析时读掉不保存，
+  渲染出来只剩 `WEBVTT` 一行
+- `NOTE` / `STYLE` / `REGION` 在转成 SRT 时会丢掉 —— SRT 里没有对应的语法
 - native 目标需要 C 编译器，本机没装，所以 `moon.mod` 里把 `preferred_target` 定为 wasm
 
 ## 许可证

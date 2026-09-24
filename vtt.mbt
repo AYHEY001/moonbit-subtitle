@@ -12,6 +12,10 @@
 /// cue 标识（时间行前面那一行）读进 `Cue::id` 并原样写回，转一圈不丢。
 /// SRT 里没有这个概念，所以 VTT → SRT 这一步标识一定会掉 —— 格式里没有地方放它。
 ///
+/// `NOTE` / `STYLE` / `REGION` 三类块收进 `Subtitle::extras`，渲染时写回原来的位置。
+/// 它们不显示，但丢了会改变文件含义，所以按原文保存。转成 SRT 时会掉 ——
+/// 同样是因为 SRT 里没有地方放。
+///
 /// 正文里的 `<b>` `<c.classname>` 这类标记按原样保留。WebVTT 的标记在 SRT 里
 /// 同样被播放器识别，默认洗掉反而丢信息。需要纯文本时显式调 `Subtitle::strip_markup`。
 
@@ -28,18 +32,18 @@ fn parse_vtt_timestamp(raw : String) -> Int? {
 }
 
 ///|
-/// NOTE / STYLE / REGION 开头的块不是字幕。
+/// 判断这一块属于 `NOTE` / `STYLE` / `REGION` 中的哪一类，都不是就返回空串。
 ///
-/// 只认"整行等于这三个词"或者"后面跟一个空格"的写法。
+/// 只认"整行等于这三个词"或者"后面跟空白"的写法。
 /// 用 `has_prefix("NOTE")` 会误伤 —— 一句以 NOTES 开头的台词会被整块丢掉。
-fn is_vtt_special_block(line : StringView) -> Bool {
-  let trimmed = line.trim()
-  trimmed.equal("NOTE") ||
-  trimmed.has_prefix("NOTE ") ||
-  trimmed.equal("STYLE") ||
-  trimmed.has_prefix("STYLE ") ||
-  trimmed.equal("REGION") ||
-  trimmed.has_prefix("REGION ")
+/// 这里借 `first_token` 取首个词再比较，分隔符是空格还是制表符都能认出来。
+fn vtt_special_kind(line : StringView) -> String {
+  let head = first_token(line)
+  if head.equal("NOTE") || head.equal("STYLE") || head.equal("REGION") {
+    head
+  } else {
+    ""
+  }
 }
 
 ///|
@@ -69,6 +73,7 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
   }
   let blocks = split_blocks(lines)
   let cues : Array[Cue] = []
+  let extras : Array[ExtraBlock] = []
   let mut block_no = 0
   for block in blocks {
     block_no = block_no + 1
@@ -85,7 +90,14 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
       }
       content = tail_from(block, head)
     }
-    if is_vtt_special_block(content[0]) {
+    let kind = vtt_special_kind(content[0])
+    if !kind.is_empty() {
+      // 非字幕块：整块原文收着，位置记成"当前已经读了几条 cue"。
+      extras.push({
+        kind,
+        text: join_body(content, 0),
+        before_pos: cues.length(),
+      })
       continue
     }
     // 标识行可以有也可以没有，时间行的位置因此不固定，得先找出来。
@@ -110,13 +122,32 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
       Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
     }
   }
-  Ok(Subtitle::from_cues(cues))
+  Ok(Subtitle::with_extras(cues, extras))
 }
 
 ///|
 /// 把毫秒格式化成 WebVTT 的时间戳：毫秒分隔符是句点，不是逗号。
 fn format_vtt_timestamp(ms : Int) -> String {
   format_timestamp(ms).replace(old=",", new=".")
+}
+
+///|
+/// 把落点等于 `pos` 的非字幕块按原顺序追加到输出里。
+///
+/// `at` 是每个块归一之后的落点，和 `extras` 一一对应。
+fn push_extras_at(
+  parts : Array[String],
+  extras : Array[ExtraBlock],
+  at : Array[Int],
+  pos : Int,
+) -> Unit {
+  let mut i = 0
+  while i < extras.length() {
+    if at[i] == pos {
+      parts.push(extras[i].text)
+    }
+    i = i + 1
+  }
 }
 
 ///|
@@ -127,11 +158,30 @@ fn format_vtt_timestamp(ms : Int) -> String {
 ///
 /// 有标识的 cue 把标识写在时间行上面一行。没有标识就不写，
 /// 文件仍然合法，只是 `::cue(#intro)` 这类选择器会失配。
+///
+/// `extras` 里那些 `NOTE` / `STYLE` / `REGION` 块按 `before_pos` 插回原位：
+/// 插在第几条 cue 之前就是第几条之前，越界的排在末尾。
+/// 文件里本来没有这类块时，渲染结果和前几版完全一样。
 pub fn Subtitle::render_vtt(self : Subtitle) -> String {
-  let blocks : Array[String] = []
+  // 先把每个块的落点归一：负数当 0，超过 cue 总数的当末尾。
+  // 不归一的话，`before_pos` 越界的块两个循环都轮不到，会凭空消失。
+  let at : Array[Int] = []
+  for b in self.extras {
+    if b.before_pos <= 0 {
+      at.push(0)
+    } else if b.before_pos >= self.cues.length() {
+      at.push(self.cues.length())
+    } else {
+      at.push(b.before_pos)
+    }
+  }
+  let parts : Array[String] = []
+  // cursor 是"已经写完几条 cue"，用它跟落点对齐。
+  let mut cursor = 0
+  push_extras_at(parts, self.extras, at, cursor)
   for c in self.cues {
     let id_line = if c.id.is_empty() { "" } else { c.id + "\n" }
-    blocks.push(
+    parts.push(
       id_line +
       format_vtt_timestamp(c.start_ms) +
       " --> " +
@@ -139,12 +189,14 @@ pub fn Subtitle::render_vtt(self : Subtitle) -> String {
       "\n" +
       c.text,
     )
+    cursor = cursor + 1
+    push_extras_at(parts, self.extras, at, cursor)
   }
   // 只剩头也是合法的 WebVTT（空字幕文件），别输出成空串
-  if blocks.length() == 0 {
+  if parts.length() == 0 {
     "WEBVTT\n"
   } else {
-    "WEBVTT\n\n" + blocks.join("\n\n") + "\n"
+    "WEBVTT\n\n" + parts.join("\n\n") + "\n"
   }
 }
 
@@ -313,7 +365,7 @@ test "parse_vtt 忽略时间行右侧的排版设置" {
 }
 
 ///|
-test "parse_vtt 跳过注释与样式块" {
+test "parse_vtt 不把注释与样式块当成字幕" {
   let text =
     #|WEBVTT
     #|
@@ -331,6 +383,156 @@ test "parse_vtt 跳过注释与样式块" {
   }
   inspect(s.cues.length(), content="1")
   inspect(s.cues[0].start_ms, content="1000")
+}
+
+///|
+test "注释与样式块收进 extras 并记住类型" {
+  let text =
+    #|WEBVTT
+    #|
+    #|NOTE 这一条是注释
+    #|
+    #|STYLE
+    #|::cue { color: yellow }
+    #|
+    #|REGION
+    #|id:r1 width:40%
+    #|
+    #|00:00:01.000 --> 00:00:04.000
+    #|第一行
+    #|
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.extras.length(), content="3")
+  inspect(s.extras[0].kind, content="NOTE")
+  inspect(s.extras[1].kind, content="STYLE")
+  inspect(s.extras[2].kind, content="REGION")
+  inspect(s.extras[1].text, content="STYLE\n::cue { color: yellow }")
+  inspect(s.extras[0].before_pos, content="0")
+}
+
+///|
+test "注释与样式块转一圈不丢" {
+  let text =
+    #|WEBVTT
+    #|
+    #|NOTE 这一条是注释
+    #|
+    #|STYLE
+    #|::cue { color: yellow }
+    #|
+    #|00:00:01.000 --> 00:00:04.000
+    #|第一行
+    #|
+  let rendered = match parse_vtt(text) {
+    Ok(s) => s.render_vtt()
+    Err(_) => ""
+  }
+  inspect(rendered, content=text)
+}
+
+///|
+test "夹在两条 cue 之间的注释留在原位" {
+  let text =
+    #|WEBVTT
+    #|
+    #|00:00:01.000 --> 00:00:04.000
+    #|第一行
+    #|
+    #|NOTE 换人了
+    #|
+    #|00:00:05.000 --> 00:00:08.000
+    #|第二行
+    #|
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.extras[0].before_pos, content="1")
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "只有样式块、没有 cue 的文件也能转一圈" {
+  let text =
+    #|WEBVTT
+    #|
+    #|STYLE
+    #|::cue { color: yellow }
+    #|
+  let rendered = match parse_vtt(text) {
+    Ok(s) => s.render_vtt()
+    Err(_) => ""
+  }
+  inspect(rendered, content=text)
+}
+
+///|
+test "extras 落点越界时排到末尾" {
+  let cues : Array[Cue] = [
+    { index: 1, start_ms: 1000, end_ms: 4000, text: "第一行", id: "", },
+  ]
+  let s = Subtitle::with_extras(cues, [
+    { kind: "NOTE", text: "NOTE 记一笔", before_pos: 99, },
+  ])
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n\nNOTE 记一笔\n",
+  )
+}
+
+///|
+test "extras 跟着 shift 与 scale 走" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\n\nSTYLE\n::cue { color: yellow }\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::shift(s, 500).extras.length(), content="1")
+  inspect(Subtitle::scale(s, 2.0).extras[0].kind, content="STYLE")
+}
+
+///|
+test "extras 跟着 normalize 与 strip_markup 走" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\n\nNOTE 记一笔\n\n00:00:01.000 --> 00:00:04.000\n<b>第一行</b>\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::normalize(s).extras[0].kind, content="NOTE")
+  // STYLE 块里是 CSS，剥标记不该动它
+  let styled = match parse_vtt("WEBVTT\n\nSTYLE\n::cue > b { color: red }\n") {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(
+    Subtitle::strip_markup(styled).extras[0].text,
+    content="STYLE\n::cue > b { color: red }",
+  )
+}
+
+///|
+test "转成 SRT 时 extras 没有地方放" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\n\nNOTE 记一笔\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // SRT 里没有对应语法，只能丢 —— 格式限制，不是实现漏做
+  let back = match parse_srt(s.render_srt()) {
+    Ok(v) => v
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(back.extras.length(), content="0")
+  inspect(back.cues.length(), content="1")
 }
 
 ///|

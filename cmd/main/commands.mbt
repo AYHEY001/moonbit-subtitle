@@ -235,7 +235,27 @@ fn emit(output : Output) -> Result[Unit, String] {
 }
 
 ///|
-/// 看信息：条数、总时长、首末时间。
+/// 按类型统计非字幕块，拼成 `NOTE 1、STYLE 2` 这样的说明。
+/// 没有这类块时返回空串 —— 绝大多数 SRT 都会走这一支。
+fn describe_extras(extras : Array[@lib.ExtraBlock]) -> String {
+  let kinds : Array[String] = ["NOTE", "STYLE", "REGION"]
+  let parts : Array[String] = []
+  for kind in kinds {
+    let mut n = 0
+    for b in extras {
+      if b.kind == kind {
+        n = n + 1
+      }
+    }
+    if n > 0 {
+      parts.push(kind + " " + n.to_string())
+    }
+  }
+  parts.join("、")
+}
+
+///|
+/// 看信息：条数、总时长、首末时间，WebVTT 里带上非字幕块的统计。
 fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
   let file = match need_value(sub, "file") {
     Ok(v) => v
@@ -247,6 +267,7 @@ fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
   }
   let cues = loaded.subtitle.cues
   let (min_start, max_end) = span_of(cues)
+  let extras = describe_extras(loaded.subtitle.extras)
   let text = "文件：" +
     file +
     "\n" +
@@ -268,7 +289,9 @@ fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
     "\n" +
     "末条：" +
     (if cues.length() == 0 { "—" } else { @lib.format_timestamp(max_end) }) +
-    "\n"
+    "\n" +
+    // 这一行只在有非字幕块时出现，避免给普通文件添噪音
+    (if extras == "" { "" } else { "非字幕块：" + extras + "\n" })
   Ok({ text, path: None, })
 }
 
