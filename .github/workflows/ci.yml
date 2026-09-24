@@ -24,8 +24,10 @@ jobs:
       - name: 工具链版本
         run: moon version --all
 
-      - name: 解析依赖
-        run: moon install
+      # CI 是全新环境，注册表索引为空。少了这一步，依赖解析会报
+      # `module was not found in the registry`。
+      - name: 更新包索引
+        run: moon update
 
       # 警告视为错误。这个项目的目标是零警告，
       # 与其等它慢慢积累，不如让 CI 直接把第一处拦下来。
