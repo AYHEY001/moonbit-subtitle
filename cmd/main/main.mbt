@@ -27,7 +27,7 @@ fn cli_args() -> Array[String] {
 fn build_command() -> @argparse.Command {
   @argparse.Command(
     "moonbit-subtitle",
-    about="本地处理 SRT / WebVTT 字幕：查看信息、平移时间轴、规范化、格式转换",
+    about="本地处理 SRT / WebVTT 字幕：查看信息、平移时间轴、规范化、格式转换、剥标记",
     version="0.1.0",
     subcommands=[
       @argparse.Command(
@@ -76,6 +76,19 @@ fn build_command() -> @argparse.Command {
         positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
         options=[
           @argparse.OptionArg("to", long="to", about="目标格式：srt 或 vtt", required=true),
+          @argparse.OptionArg(
+            "output",
+            short='o',
+            long="output",
+            about="输出文件；不给就打到标准输出",
+          ),
+        ],
+      ),
+      @argparse.Command(
+        "strip",
+        about="剥掉正文里的排版标记，例：strip a.vtt",
+        positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
+        options=[
           @argparse.OptionArg(
             "output",
             short='o',

@@ -29,6 +29,7 @@ fn run(name : String, sub : @argparse.Matches) -> Unit {
     "shift" => cmd_shift(sub)
     "normalize" => cmd_normalize(sub)
     "convert" => cmd_convert(sub)
+    "strip" => cmd_strip(sub)
     _ => Err("未知子命令：" + name)
   }
   match result {
@@ -341,6 +342,30 @@ fn cmd_convert(sub : @argparse.Matches) -> Result[Output, String] {
   make_output(
     file,
     render_as(loaded.subtitle, target),
+    value_of(sub, "output"),
+  )
+}
+
+///|
+/// 剥掉正文里的排版标记。
+///
+/// 输出仍是完整字幕 —— 序号、时间轴、cue 标识都在，只是正文里的 `<b>` `&amp;`
+/// 这类东西被换成了它们代表的字符。这个形态适合喂给翻译、语音合成、全文检索。
+///
+/// 注意它**不**做"只导出文字、连时间码都不要"这件事：那是另一种输出格式，
+/// 不属于"解析字幕"的范围。要纯文字的话，拿 SRT 用别的方式切第 3 行起更直接。
+fn cmd_strip(sub : @argparse.Matches) -> Result[Output, String] {
+  let file = match need_value(sub, "file") {
+    Ok(v) => v
+    Err(msg) => return Err(msg)
+  }
+  let loaded = match load(file) {
+    Ok(v) => v
+    Err(msg) => return Err(msg)
+  }
+  make_output(
+    file,
+    render_as(loaded.subtitle.strip_markup(), loaded.format),
     value_of(sub, "output"),
   )
 }
