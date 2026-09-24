@@ -1,5 +1,9 @@
 import {
   "haiou/moonbit-subtitle" @lib,
+  "moonbitlang/core/argparse" @argparse,
+  "moonbitlang/core/env" @env,
+  "moonbitlang/x/fs" @fs,
+  "moonbitlang/x/sys" @sys,
 }
 
 pkgtype(kind: "executable")

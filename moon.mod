@@ -5,3 +5,7 @@ repository = ""
 license = "MIT"
 keywords = [ "subtitle", "srt", "vtt", "text" ]
 description = "Pure MoonBit subtitle toolkit: parse, transform and render SRT / WebVTT."
+
+import {
+  "moonbitlang/x@0.5.5",
+}
