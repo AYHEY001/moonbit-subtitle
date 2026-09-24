@@ -34,11 +34,18 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
     block_no = block_no + 1
     if is_index_line(block[0]) {
       if block.length() < 2 {
-        return Err("第 " + block_no.to_string() + " 块：序号行后面没有时间行")
+        return Err(
+          "第 " +
+          block_no.to_string() +
+          " 块：序号行后面没有时间行",
+        )
       }
       if !is_time_line(block[1]) {
         return Err(
-          "第 " + block_no.to_string() + " 块：第二行不是时间行：" + block[1].to_owned(),
+          "第 " +
+          block_no.to_string() +
+          " 块：第二行不是时间行：" +
+          block[1].to_owned(),
         )
       }
       match parse_time_range(block[1], parse_timestamp) {
@@ -73,7 +80,9 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
         id: prev.id,
       }
     } else {
-      return Err("文件开头不是序号行，第一行是：" + block[0].to_owned())
+      return Err(
+        "文件开头不是序号行，第一行是：" + block[0].to_owned(),
+      )
     }
   }
   Ok(Subtitle::from_cues(cues))
@@ -110,9 +119,9 @@ pub fn Subtitle::render_srt(self : Subtitle) -> String {
 
 ///|
 /// 测试用的一小段 SRT，包含两条字幕。
-let sample_srt : String =
-  "1\n00:00:01,000 --> 00:00:04,000\n第一行\n\n2\n00:00:05,000 --> 00:00:08,000\n第二行\n"
+let sample_srt : String = "1\n00:00:01,000 --> 00:00:04,000\n第一行\n\n2\n00:00:05,000 --> 00:00:08,000\n第二行\n"
 
+///|
 test "parse_srt 解析出两条字幕" {
   let r = parse_srt(sample_srt)
   let ok = match r {
@@ -122,6 +131,7 @@ test "parse_srt 解析出两条字幕" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_srt 丢掉文件开头的 BOM" {
   let with_bom = "\u{FEFF}" + sample_srt
   let ok = match parse_srt(with_bom) {
@@ -131,6 +141,7 @@ test "parse_srt 丢掉文件开头的 BOM" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_srt 能吃下 CRLF 换行" {
   let crlf = "1\r\n00:00:01,000 --> 00:00:04,000\r\n第一行\r\n\r\n"
   let ok = match parse_srt(crlf) {
@@ -140,6 +151,7 @@ test "parse_srt 能吃下 CRLF 换行" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_srt 对残缺的块报错" {
   let ok = match parse_srt("1\n坏掉的时间行\n正文\n") {
     Ok(_) => false
@@ -148,6 +160,7 @@ test "parse_srt 对残缺的块报错" {
   inspect(ok, content="true")
 }
 
+///|
 test "render_srt 输出能被打回原形" {
   let rendered = match parse_srt(sample_srt) {
     Ok(s) => s.render_srt()
@@ -156,6 +169,7 @@ test "render_srt 输出能被打回原形" {
   inspect(rendered, content=sample_srt)
 }
 
+///|
 test "parse_srt 取到时间与正文" {
   let s = match parse_srt(sample_srt) {
     Ok(s) => s
@@ -167,6 +181,7 @@ test "parse_srt 取到时间与正文" {
   inspect(s.cues[1].index, content="2")
 }
 
+///|
 test "parse_srt 保留多行正文" {
   let text = "1\n00:00:01,000 --> 00:00:04,000\n第一行\n第二行\n"
   let s = match parse_srt(text) {
@@ -177,6 +192,7 @@ test "parse_srt 保留多行正文" {
   inspect(s.render_srt(), content=text)
 }
 
+///|
 test "parse_srt 容忍时间行多余空格与排版坐标" {
   let text = "1\n  00:00:01,000  -->  00:00:04,000 X1:100 X2:500  \n第一行\n"
   let s = match parse_srt(text) {
@@ -187,6 +203,7 @@ test "parse_srt 容忍时间行多余空格与排版坐标" {
   inspect(s.cues[0].end_ms, content="4000")
 }
 
+///|
 test "parse_srt 原样保留跳号与乱序的序号" {
   let text = "7\n00:00:05,000 --> 00:00:06,000\n后\n\n3\n00:00:01,000 --> 00:00:02,000\n先\n"
   let s = match parse_srt(text) {
@@ -197,6 +214,7 @@ test "parse_srt 原样保留跳号与乱序的序号" {
   inspect(s.cues[1].index, content="3")
 }
 
+///|
 test "render_srt 重新编号并保持 LF" {
   let text = "7\r\n00:00:05,000 --> 00:00:06,000\r\n后\r\n\r\n3\r\n00:00:01,000 --> 00:00:02,000\r\n先\r\n"
   let rendered = match parse_srt(text) {
@@ -209,6 +227,7 @@ test "render_srt 重新编号并保持 LF" {
   )
 }
 
+///|
 test "parse_srt 把正文里的空行并回上一条" {
   let text = "1\n00:00:01,000 --> 00:00:04,000\n第一行\n\n第二行\n"
   let s = match parse_srt(text) {
@@ -219,6 +238,7 @@ test "parse_srt 把正文里的空行并回上一条" {
   inspect(s.cues[0].text, content="第一行\n\n第二行")
 }
 
+///|
 test "parse_srt 空文件返回零条" {
   let ok = match parse_srt("") {
     Ok(s) => s.cues.length() == 0
@@ -227,6 +247,7 @@ test "parse_srt 空文件返回零条" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_srt 拒绝结束早于开始的时间行" {
   let ok = match parse_srt("1\n00:00:05,000 --> 00:00:01,000\n反了\n") {
     Ok(_) => false
@@ -235,20 +256,25 @@ test "parse_srt 拒绝结束早于开始的时间行" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_srt 拒绝开头的空块之后直接是正文" {
-  let ok = match parse_srt("这不是序号行\n00:00:01,000 --> 00:00:02,000\n") {
+  let ok = match
+    parse_srt("这不是序号行\n00:00:01,000 --> 00:00:02,000\n") {
     Ok(_) => false
     Err(_) => true
   }
   inspect(ok, content="true")
 }
 
+///|
 test "空字幕渲染成空串" {
   inspect(Subtitle::from_cues([]).render_srt(), content="")
 }
 
+///|
 test "错误信息里带块号" {
-  let msg = match parse_srt("1\n00:00:01,000 --> 00:00:04,000\n甲\n\n2\n没有箭头\n") {
+  let msg = match
+    parse_srt("1\n00:00:01,000 --> 00:00:04,000\n甲\n\n2\n没有箭头\n") {
     Ok(_) => ""
     Err(msg) => msg
   }

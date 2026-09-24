@@ -1,8 +1,13 @@
 name = "haiou/moonbit-subtitle"
+
 version = "0.1.0"
+
 readme = "README.md"
-repository = ""
+
+repository = "https://github.com/AYHEY001/moonbit-subtitle"
+
 license = "MIT"
+
 keywords = [ "subtitle", "srt", "vtt", "text" ]
 
 preferred_target = "wasm"

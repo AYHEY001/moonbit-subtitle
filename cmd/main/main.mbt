@@ -75,7 +75,12 @@ fn build_command() -> @argparse.Command {
         about="格式转换，例：convert a.srt --to vtt",
         positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
         options=[
-          @argparse.OptionArg("to", long="to", about="目标格式：srt 或 vtt", required=true),
+          @argparse.OptionArg(
+            "to",
+            long="to",
+            about="目标格式：srt 或 vtt",
+            required=true,
+          ),
           @argparse.OptionArg(
             "output",
             short='o',

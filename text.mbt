@@ -94,7 +94,11 @@ fn tail_from(items : Array[StringView], start : Int) -> Array[StringView] {
 /// WebVTT 的 `align:start position:10%` —— 真正的结束时间只是第一个词。
 fn first_token(part : StringView) -> String {
   let tokens = part.trim().split(" ").to_array()
-  if tokens.length() == 0 { "" } else { tokens[0].to_owned() }
+  if tokens.length() == 0 {
+    ""
+  } else {
+    tokens[0].to_owned()
+  }
 }
 
 ///|
@@ -140,30 +144,36 @@ fn parse_time_range(
   }
 }
 
+///|
 test "strip_bom 只去掉开头的 BOM" {
   inspect(strip_bom("\u{FEFF}abc"), content="abc")
   inspect(strip_bom("abc"), content="abc")
   inspect(strip_bom("a\u{FEFF}b"), content="a\u{FEFF}b")
 }
 
+///|
 test "normalize_newlines 把 CRLF 和单独 CR 都归一" {
   inspect(normalize_newlines("a\r\nb\rc\nd"), content="a\nb\nc\nd")
 }
 
+///|
 test "split_blocks 忽略多余空行" {
   let lines = "a\n\n\nb\n\nc\n".split("\n").to_array()
   inspect(split_blocks(lines).length(), content="3")
 }
 
+///|
 test "split_blocks 空输入返回零块" {
   inspect(split_blocks("\n\n\n".split("\n").to_array()).length(), content="0")
 }
 
+///|
 test "first_token 只取第一个词" {
   inspect(first_token(" 00:00:04,000 X1:100 "), content="00:00:04,000")
   inspect(first_token("   "), content="")
 }
 
+///|
 test "join_body 保留正文换行" {
   let lines = "x\na\nb".split("\n").to_array()
   inspect(join_body(lines, 1), content="a\nb")

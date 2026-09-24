@@ -61,7 +61,10 @@ fn value_of(matches : @argparse.Matches, name : String) -> String? {
 ///|
 /// 取必填参数。argparse 只管选项标了 `required` 的情况，
 /// 位置参数缺了要自己拦。
-fn need_value(matches : @argparse.Matches, name : String) -> Result[String, String] {
+fn need_value(
+  matches : @argparse.Matches,
+  name : String,
+) -> Result[String, String] {
   match value_of(matches, name) {
     Some(v) => Ok(v)
     None => Err("缺少参数：" + name)
@@ -113,9 +116,7 @@ fn same_path(a : String, b : String) -> Bool {
 /// 注意这里写的是 `utf8` 而不是 `utf-8`：`moonbitlang/x/fs` 只认前者，
 /// 写成 `utf-8` 会直接抛 `Unsupported encoding`。
 fn read_text(path : String) -> Result[String, String] {
-  try {
-    Ok(@fs.read_file_to_string(path, encoding="utf8"))
-  } catch {
+  Ok(@fs.read_file_to_string(path, encoding="utf8")) catch {
     @fs.IOError(msg) => Err("读不了 " + path + "：" + msg)
   }
 }
@@ -189,11 +190,19 @@ fn span_of(cues : Array[@lib.Cue]) -> (Int, Int) {
 ///|
 /// 组一个输出，顺手拦掉"输出到输入文件本身"。
 /// 那等于把原文件覆盖掉，而这一步之前没有任何备份。
-fn make_output(input : String, text : String, path : String?) -> Result[Output, String] {
+fn make_output(
+  input : String,
+  text : String,
+  path : String?,
+) -> Result[Output, String] {
   match path {
     Some(p) =>
       if same_path(p, input) {
-        Err("输出文件跟输入文件是同一个（" + p + "）。换个路径写，或者写到别处再替换")
+        Err(
+          "输出文件跟输入文件是同一个（" +
+          p +
+          "）。换个路径写，或者写到别处再替换",
+        )
       } else {
         Ok({ text, path: Some(p), })
       }
@@ -255,18 +264,10 @@ fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
     }) +
     "\n" +
     "首条：" +
-    (if cues.length() == 0 {
-      "—"
-    } else {
-      @lib.format_timestamp(min_start)
-    }) +
+    (if cues.length() == 0 { "—" } else { @lib.format_timestamp(min_start) }) +
     "\n" +
     "末条：" +
-    (if cues.length() == 0 {
-      "—"
-    } else {
-      @lib.format_timestamp(max_end)
-    }) +
+    (if cues.length() == 0 { "—" } else { @lib.format_timestamp(max_end) }) +
     "\n"
   Ok({ text, path: None, })
 }
@@ -286,7 +287,9 @@ fn cmd_shift(sub : @argparse.Matches) -> Result[Output, String] {
     Some(v) => v
     None =>
       return Err(
-        "平移量看不懂：" + offset_text + "。写 -500 表示毫秒，也可以写 -1.5s、2m",
+        "平移量看不懂：" +
+        offset_text +
+        "。写 -500 表示毫秒，也可以写 -1.5s、2m",
       )
   }
   let loaded = match load(file) {
@@ -339,11 +342,7 @@ fn cmd_convert(sub : @argparse.Matches) -> Result[Output, String] {
     Ok(v) => v
     Err(msg) => return Err(msg)
   }
-  make_output(
-    file,
-    render_as(loaded.subtitle, target),
-    value_of(sub, "output"),
-  )
+  make_output(file, render_as(loaded.subtitle, target), value_of(sub, "output"))
 }
 
 ///|
@@ -370,6 +369,7 @@ fn cmd_strip(sub : @argparse.Matches) -> Result[Output, String] {
   )
 }
 
+///|
 test "format_from_path 认得出两种扩展名" {
   debug_inspect(format_from_path("a.srt"), content="Some(\"srt\")")
   debug_inspect(format_from_path("a.VTT"), content="Some(\"vtt\")")
@@ -377,6 +377,7 @@ test "format_from_path 认得出两种扩展名" {
   debug_inspect(format_from_path("a.txt"), content="None")
 }
 
+///|
 test "target_format 宽容常见的几种写法" {
   debug_inspect(target_format("vtt"), content="Some(\"vtt\")")
   debug_inspect(target_format("WebVTT"), content="Some(\"vtt\")")
@@ -385,11 +386,13 @@ test "target_format 宽容常见的几种写法" {
   debug_inspect(target_format("ass"), content="None")
 }
 
+///|
 test "same_path 忽略大小写与斜杠方向" {
   inspect(same_path("D:\\sub\\a.srt", "d:/sub/A.SRT"), content="true")
   inspect(same_path("a.srt", "b.srt"), content="false")
 }
 
+///|
 test "normalize_path 统一斜杠与大小写" {
   inspect(normalize_path("D:\\Sub\\A.SRT"), content="d:/sub/a.srt")
 }

@@ -102,9 +102,14 @@ pub fn parse_duration_ms(raw : String) -> Int? {
     None => return None
   }
   let millis = thousandths * factor / 1000
-  if negative { Some(-millis) } else { Some(millis) }
+  if negative {
+    Some(-millis)
+  } else {
+    Some(millis)
+  }
 }
 
+///|
 test "parse_duration_ms 收下裸数字毫秒" {
   debug_inspect(parse_duration_ms("500"), content="Some(500)")
   debug_inspect(parse_duration_ms("-500"), content="Some(-500)")
@@ -112,6 +117,7 @@ test "parse_duration_ms 收下裸数字毫秒" {
   debug_inspect(parse_duration_ms("0"), content="Some(0)")
 }
 
+///|
 test "parse_duration_ms 收下毫秒与秒" {
   debug_inspect(parse_duration_ms("500ms"), content="Some(500)")
   debug_inspect(parse_duration_ms("2s"), content="Some(2000)")
@@ -120,15 +126,18 @@ test "parse_duration_ms 收下毫秒与秒" {
   debug_inspect(parse_duration_ms("-1.5s"), content="Some(-1500)")
 }
 
+///|
 test "parse_duration_ms 收下分钟" {
   debug_inspect(parse_duration_ms("2m"), content="Some(120000)")
   debug_inspect(parse_duration_ms("1.5m"), content="Some(90000)")
 }
 
+///|
 test "parse_duration_ms 忽略两端空白" {
   debug_inspect(parse_duration_ms("  1.5s  "), content="Some(1500)")
 }
 
+///|
 test "parse_duration_ms 对写错的输入返回 None" {
   debug_inspect(parse_duration_ms(""), content="None")
   debug_inspect(parse_duration_ms("abc"), content="None")
@@ -138,6 +147,7 @@ test "parse_duration_ms 对写错的输入返回 None" {
   debug_inspect(parse_duration_ms("1.s"), content="None")
 }
 
+///|
 test "parse_thousandths 小数位截断到三位" {
   debug_inspect(parse_thousandths("1"), content="Some(1000)")
   debug_inspect(parse_thousandths("1.5"), content="Some(1500)")

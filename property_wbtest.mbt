@@ -38,7 +38,11 @@ fn same_subtitle(a : Subtitle, b : Subtitle) -> Bool {
 ///|
 /// 取绝对值。
 fn positive(v : Int) -> Int {
-  if v < 0 { -v } else { v }
+  if v < 0 {
+    -v
+  } else {
+    v
+  }
 }
 
 ///|
@@ -106,6 +110,7 @@ fn roundtrip_vtt_then_srt(s : Subtitle) -> Bool {
   }
 }
 
+///|
 test "SRT 渲染再解析是恒等变换" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -120,6 +125,7 @@ test "SRT 渲染再解析是恒等变换" {
   )
 }
 
+///|
 test "WebVTT 渲染再解析是恒等变换" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -134,6 +140,7 @@ test "WebVTT 渲染再解析是恒等变换" {
   )
 }
 
+///|
 test "带标识的 WebVTT 渲染再解析也是恒等变换" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -148,14 +155,18 @@ test "带标识的 WebVTT 渲染再解析也是恒等变换" {
   )
 }
 
+///|
 test "SRT 与 WebVTT 之间来回转换不丢时间" {
   @quickcheck.check(
-    (seed_values : Array[Int]) => roundtrip_vtt_then_srt(subtitle_of(seed_values)),
+    (seed_values : Array[Int]) => {
+      roundtrip_vtt_then_srt(subtitle_of(seed_values))
+    },
     count=200,
     seed=20260926,
   )
 }
 
+///|
 test "shift 对非负平移量只改时间不改正文" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -182,6 +193,7 @@ test "shift 对非负平移量只改时间不改正文" {
   )
 }
 
+///|
 test "normalize 幂等，序号连续，开始时间不倒退" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -205,6 +217,7 @@ test "normalize 幂等，序号连续，开始时间不倒退" {
   )
 }
 
+///|
 test "merge_overlaps 之后两两不再重叠" {
   @quickcheck.check(
     (seed_values : Array[Int]) => {
@@ -224,6 +237,7 @@ test "merge_overlaps 之后两两不再重叠" {
   )
 }
 
+///|
 test "时间戳解析再格式化是恒等变换" {
   @quickcheck.check(
     (raw : Int) => {

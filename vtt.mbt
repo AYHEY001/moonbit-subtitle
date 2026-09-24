@@ -150,9 +150,9 @@ pub fn Subtitle::render_vtt(self : Subtitle) -> String {
 
 ///|
 /// 一段标准的 WebVTT，用来做往返测试。
-let sample_vtt : String =
-  "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n\n00:00:05.000 --> 00:00:08.000\n第二行\n"
+let sample_vtt : String = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n\n00:00:05.000 --> 00:00:08.000\n第二行\n"
 
+///|
 test "parse_vtt 解析出两条字幕" {
   let s = match parse_vtt(sample_vtt) {
     Ok(s) => s
@@ -163,6 +163,7 @@ test "parse_vtt 解析出两条字幕" {
   inspect(s.cues[1].text, content="第二行")
 }
 
+///|
 test "parse_vtt 序号按顺序编好" {
   let s = match parse_vtt(sample_vtt) {
     Ok(s) => s
@@ -171,6 +172,7 @@ test "parse_vtt 序号按顺序编好" {
   inspect(s.cues[1].index, content="2")
 }
 
+///|
 test "parse_vtt 容忍 BOM 与 CRLF" {
   let text = "\u{FEFF}WEBVTT\r\n\r\n00:00:01.000 --> 00:00:04.000\r\n第一行\r\n\r\n"
   let s = match parse_vtt(text) {
@@ -181,6 +183,7 @@ test "parse_vtt 容忍 BOM 与 CRLF" {
   inspect(s.cues[0].text, content="第一行")
 }
 
+///|
 test "parse_vtt 允许省略小时" {
   let text = "WEBVTT\n\n01:23.456 --> 01:25.000\n一分钟处\n"
   let s = match parse_vtt(text) {
@@ -191,6 +194,7 @@ test "parse_vtt 允许省略小时" {
   inspect(s.cues[0].end_ms, content="85000")
 }
 
+///|
 test "parse_vtt 把 cue 标识读进 id" {
   let text = "WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
@@ -202,6 +206,7 @@ test "parse_vtt 把 cue 标识读进 id" {
   inspect(s.cues[0].text, content="第一行")
 }
 
+///|
 test "parse_vtt 没有标识时 id 是空串" {
   let s = match parse_vtt(sample_vtt) {
     Ok(s) => s
@@ -210,6 +215,7 @@ test "parse_vtt 没有标识时 id 是空串" {
   inspect(s.cues[0].id, content="")
 }
 
+///|
 test "render_vtt 把标识写回去" {
   let text = "WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let rendered = match parse_vtt(text) {
@@ -219,8 +225,9 @@ test "render_vtt 把标识写回去" {
   inspect(rendered, content=text)
 }
 
+///|
 test "多条标识的 VTT 转一圈不丢" {
-  let text = (
+  let text =
     #|WEBVTT
     #|
     #|intro
@@ -231,7 +238,6 @@ test "多条标识的 VTT 转一圈不丢" {
     #|00:00:05.000 --> 00:00:08.000
     #|第二行
     #|
-  )
   let rendered = match parse_vtt(text) {
     Ok(s) => s.render_vtt()
     Err(_) => ""
@@ -239,6 +245,7 @@ test "多条标识的 VTT 转一圈不丢" {
   inspect(rendered, content=text)
 }
 
+///|
 test "标识行两侧的空白被清掉" {
   let text = "WEBVTT\n\n  intro  \n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
@@ -248,8 +255,10 @@ test "标识行两侧的空白被清掉" {
   inspect(s.cues[0].id, content="intro")
 }
 
+///|
 test "标识在 SRT 里存不下" {
-  let s = match parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
+  let s = match
+    parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
@@ -261,16 +270,19 @@ test "标识在 SRT 里存不下" {
   inspect(back.cues[0].id, content="")
 }
 
+///|
 test "shift 之后标识还在" {
-  let s = match parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
+  let s = match
+    parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
   inspect(Subtitle::shift(s, 500).cues[0].id, content="intro")
 }
 
+///|
 test "normalize 之后标识跟着条目走" {
-  let text = (
+  let text =
     #|WEBVTT
     #|
     #|b
@@ -281,7 +293,6 @@ test "normalize 之后标识跟着条目走" {
     #|00:00:01.000 --> 00:00:02.000
     #|先
     #|
-  )
   let s = match parse_vtt(text) {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
@@ -291,6 +302,7 @@ test "normalize 之后标识跟着条目走" {
   inspect(r.cues[1].id, content="b")
 }
 
+///|
 test "parse_vtt 忽略时间行右侧的排版设置" {
   let text = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000 align:start position:10%\n第一行\n"
   let s = match parse_vtt(text) {
@@ -300,8 +312,9 @@ test "parse_vtt 忽略时间行右侧的排版设置" {
   inspect(s.cues[0].end_ms, content="4000")
 }
 
+///|
 test "parse_vtt 跳过注释与样式块" {
-  let text = (
+  let text =
     #|WEBVTT
     #|
     #|NOTE 这一条是注释
@@ -312,7 +325,6 @@ test "parse_vtt 跳过注释与样式块" {
     #|00:00:01.000 --> 00:00:04.000
     #|第一行
     #|
-  )
   let s = match parse_vtt(text) {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
@@ -321,6 +333,7 @@ test "parse_vtt 跳过注释与样式块" {
   inspect(s.cues[0].start_ms, content="1000")
 }
 
+///|
 test "parse_vtt 不误伤以 NOTES 开头的台词" {
   let text = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nNOTES 这行是台词\n"
   let s = match parse_vtt(text) {
@@ -330,6 +343,7 @@ test "parse_vtt 不误伤以 NOTES 开头的台词" {
   inspect(s.cues[0].text, content="NOTES 这行是台词")
 }
 
+///|
 test "parse_vtt 接受头之后不留空行的文件" {
   let text = "WEBVTT\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
@@ -340,6 +354,7 @@ test "parse_vtt 接受头之后不留空行的文件" {
   inspect(s.cues[0].start_ms, content="1000")
 }
 
+///|
 test "parse_vtt 跳过文件头里的元数据" {
   let text = "WEBVTT\nKind: captions\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
@@ -349,6 +364,7 @@ test "parse_vtt 跳过文件头里的元数据" {
   inspect(s.cues.length(), content="1")
 }
 
+///|
 test "parse_vtt 拒绝没有 WEBVTT 头的文件" {
   let ok = match parse_vtt("1\n00:00:01,000 --> 00:00:04,000\n第一行\n") {
     Ok(_) => false
@@ -357,6 +373,7 @@ test "parse_vtt 拒绝没有 WEBVTT 头的文件" {
   inspect(ok, content="true")
 }
 
+///|
 test "parse_vtt 拒绝找不到时间行的块" {
   let ok = match parse_vtt("WEBVTT\n\n这是一段没头没尾的话\n") {
     Ok(_) => false
@@ -365,6 +382,7 @@ test "parse_vtt 拒绝找不到时间行的块" {
   inspect(ok, content="true")
 }
 
+///|
 test "render_vtt 输出能被打回原形" {
   let rendered = match parse_vtt(sample_vtt) {
     Ok(s) => s.render_vtt()
@@ -373,18 +391,24 @@ test "render_vtt 输出能被打回原形" {
   inspect(rendered, content=sample_vtt)
 }
 
+///|
 test "render_vtt 把省略的小时补回来" {
   let s = match parse_vtt("WEBVTT\n\n01:23.456 --> 01:25.000\n一分钟处\n") {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
-  inspect(s.render_vtt(), content="WEBVTT\n\n00:01:23.456 --> 00:01:25.000\n一分钟处\n")
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\n\n00:01:23.456 --> 00:01:25.000\n一分钟处\n",
+  )
 }
 
+///|
 test "空的 WebVTT 渲染出来只剩头" {
   inspect(Subtitle::from_cues([]).render_vtt(), content="WEBVTT\n")
 }
 
+///|
 test "WebVTT 可以转成 SRT" {
   let s = match parse_vtt(sample_vtt) {
     Ok(s) => s
@@ -396,10 +420,14 @@ test "WebVTT 可以转成 SRT" {
   )
 }
 
+///|
 test "SRT 可以转成 WebVTT" {
   let s = match parse_srt("1\n00:00:01,000 --> 00:00:04,000\n第一行\n") {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
-  inspect(s.render_vtt(), content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n")
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+  )
 }

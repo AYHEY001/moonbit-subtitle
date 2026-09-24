@@ -18,7 +18,10 @@ test "解析、平移、渲染" {
   // 平移 -500 毫秒：配音比预估短了半秒，字幕整体提前
   let moved = subtitle.shift(-500)
   inspect(moved.cues[0].start_ms, content="500")
-  inspect(moved.render_srt(), content="1\n00:00:00,500 --> 00:00:03,500\n第一行\n")
+  inspect(
+    moved.render_srt(),
+    content="1\n00:00:00,500 --> 00:00:03,500\n第一行\n",
+  )
 }
 ```
 
@@ -34,7 +37,10 @@ test "跨格式转换" {
     Ok(s) => s
     Err(_) => panic()
   }
-  inspect(subtitle.render_srt(), content="1\n00:02:03,456 --> 00:02:05,000\n小时可以省略\n")
+  inspect(
+    subtitle.render_srt(),
+    content="1\n00:02:03,456 --> 00:02:05,000\n小时可以省略\n",
+  )
 }
 ```
 
@@ -62,9 +68,18 @@ test "容错解析" {
 ```mbt check
 ///|
 test "时间量解析" {
-  debug_inspect(@moonbit-subtitle.parse_duration_ms("1.5s"), content="Some(1500)")
-  debug_inspect(@moonbit-subtitle.parse_duration_ms("-500"), content="Some(-500)")
-  debug_inspect(@moonbit-subtitle.parse_duration_ms("2m"), content="Some(120000)")
+  debug_inspect(
+    @moonbit-subtitle.parse_duration_ms("1.5s"),
+    content="Some(1500)",
+  )
+  debug_inspect(
+    @moonbit-subtitle.parse_duration_ms("-500"),
+    content="Some(-500)",
+  )
+  debug_inspect(
+    @moonbit-subtitle.parse_duration_ms("2m"),
+    content="Some(120000)",
+  )
   debug_inspect(@moonbit-subtitle.parse_duration_ms("一秒"), content="None")
 }
 ```

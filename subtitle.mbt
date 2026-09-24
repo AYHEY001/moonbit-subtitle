@@ -36,7 +36,11 @@ pub fn Subtitle::from_cues(cues : Array[Cue]) -> Subtitle {
 ///|
 /// 负数截断到 0。播放器不认负时间戳，宁可把整条字幕贴到 0 上。
 fn clamp_to_zero(value : Int) -> Int {
-  if value < 0 { 0 } else { value }
+  if value < 0 {
+    0
+  } else {
+    value
+  }
 }
 
 ///|
@@ -64,7 +68,11 @@ pub fn Subtitle::shift(self : Subtitle, offset_ms : Int) -> Subtitle {
 /// 截断会让每一条都偏向提前，几百条累计下来开头就有可感的偏移。
 fn scale_ms(value : Int, speed : Double) -> Int {
   let scaled = value.to_double() * speed
-  if scaled < 0.0 { 0 } else { (scaled + 0.5).to_int() }
+  if scaled < 0.0 {
+    0
+  } else {
+    (scaled + 0.5).to_int()
+  }
 }
 
 ///|
@@ -111,7 +119,11 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
           out[out.length() - 1] = {
             index: prev.index,
             start_ms: prev.start_ms,
-            end_ms: if c.end_ms > prev.end_ms { c.end_ms } else { prev.end_ms },
+            end_ms: if c.end_ms > prev.end_ms {
+              c.end_ms
+            } else {
+              prev.end_ms
+            },
             text: prev.text + "\n" + c.text,
             // 两条并成一条，标识只能留一个。取先出现的那条：
             // 它才是"这次合并从哪儿开始"的那个锚点。
@@ -159,83 +171,106 @@ pub fn Subtitle::duration_ms(self : Subtitle) -> Int {
   }
 }
 
+///|
 test "from_cues 能构造字幕" {
-  let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "", },
+  ])
   inspect(s.cues.length(), content="1")
 }
 
+///|
 test "shift 整体延后" {
-  let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "", },
+  ])
   inspect(Subtitle::shift(s, 500).cues[0].start_ms, content="1500")
 }
 
+///|
 test "shift 不产生负时间" {
-  let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "", },
+  ])
   let r = Subtitle::shift(s, -3000)
   inspect(r.cues[0].start_ms, content="0")
   inspect(r.cues[0].end_ms, content="0")
 }
 
+///|
 test "shift 保留原文与序号" {
-  let s = Subtitle::from_cues([{ index: 7, start_ms: 1000, end_ms: 2000, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 7, start_ms: 1000, end_ms: 2000, text: "你好", id: "", },
+  ])
   let r = Subtitle::shift(s, 250)
   inspect(r.cues[0].index, content="7")
   inspect(r.cues[0].text, content="你好")
   inspect(r.cues[0].end_ms, content="2250")
 }
 
+///|
 test "scale 按倍速压缩" {
-  let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2001, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 1000, end_ms: 2001, text: "你好", id: "", },
+  ])
   let r = Subtitle::scale(s, 2.0)
   inspect(r.cues[0].start_ms, content="2000")
   // 2001 * 2 = 4002，没有被截断成 4001
   inspect(r.cues[0].end_ms, content="4002")
 }
 
+///|
 test "scale 遇到非正数倍速时不动" {
-  let s = Subtitle::from_cues([{ index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "" }])
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 1000, end_ms: 2000, text: "你好", id: "", },
+  ])
   inspect(Subtitle::scale(s, 0.0).cues[0].start_ms, content="1000")
   inspect(Subtitle::scale(s, -1.0).cues[0].start_ms, content="1000")
 }
 
+///|
 test "duration_ms 取最后一条的结束时间" {
   let s = Subtitle::from_cues([
-    { index: 1, start_ms: 0, end_ms: 1000, text: "一", id: "" },
-    { index: 2, start_ms: 1200, end_ms: 3500, text: "二", id: "" },
+    { index: 1, start_ms: 0, end_ms: 1000, text: "一", id: "", },
+    { index: 2, start_ms: 1200, end_ms: 3500, text: "二", id: "", },
   ])
   inspect(Subtitle::duration_ms(s), content="3500")
 }
 
+///|
 test "duration_ms 空字幕返回零" {
   let s = Subtitle::from_cues([])
   inspect(Subtitle::duration_ms(s), content="0")
 }
 
+///|
 test "normalize 重排序号" {
   let s = Subtitle::from_cues([
-    { index: 7, start_ms: 5000, end_ms: 6000, text: "后", id: "" },
-    { index: 3, start_ms: 1000, end_ms: 2000, text: "先", id: "" },
+    { index: 7, start_ms: 5000, end_ms: 6000, text: "后", id: "", },
+    { index: 3, start_ms: 1000, end_ms: 2000, text: "先", id: "", },
   ])
   let r = Subtitle::normalize(s)
   inspect(r.cues[0].text, content="先")
   inspect(r.cues[0].index, content="1")
 }
 
+///|
 test "normalize 把序号补齐成一到 n" {
   let s = Subtitle::from_cues([
-    { index: 30, start_ms: 0, end_ms: 100, text: "甲", id: "" },
-    { index: 30, start_ms: 200, end_ms: 300, text: "乙", id: "" },
-    { index: 30, start_ms: 400, end_ms: 500, text: "丙", id: "" },
+    { index: 30, start_ms: 0, end_ms: 100, text: "甲", id: "", },
+    { index: 30, start_ms: 200, end_ms: 300, text: "乙", id: "", },
+    { index: 30, start_ms: 400, end_ms: 500, text: "丙", id: "", },
   ])
   let r = Subtitle::normalize(s)
   inspect(r.cues[2].index, content="3")
   inspect(Subtitle::duration_ms(r), content="500")
 }
 
+///|
 test "merge_overlaps 合并重叠的两条" {
   let s = Subtitle::from_cues([
-    { index: 1, start_ms: 0, end_ms: 2000, text: "上", id: "" },
-    { index: 2, start_ms: 1900, end_ms: 3000, text: "下", id: "" },
+    { index: 1, start_ms: 0, end_ms: 2000, text: "上", id: "", },
+    { index: 2, start_ms: 1900, end_ms: 3000, text: "下", id: "", },
   ])
   let r = Subtitle::merge_overlaps(s)
   inspect(r.cues.length(), content="1")
@@ -243,18 +278,20 @@ test "merge_overlaps 合并重叠的两条" {
   inspect(r.cues[0].text, content="上\n下")
 }
 
+///|
 test "merge_overlaps 不动首尾相接的两条" {
   let s = Subtitle::from_cues([
-    { index: 1, start_ms: 0, end_ms: 2000, text: "上", id: "" },
-    { index: 2, start_ms: 2000, end_ms: 3000, text: "下", id: "" },
+    { index: 1, start_ms: 0, end_ms: 2000, text: "上", id: "", },
+    { index: 2, start_ms: 2000, end_ms: 3000, text: "下", id: "", },
   ])
   inspect(Subtitle::merge_overlaps(s).cues.length(), content="2")
 }
 
+///|
 test "merge_overlaps 内部先排序" {
   let s = Subtitle::from_cues([
-    { index: 9, start_ms: 5000, end_ms: 6000, text: "后", id: "" },
-    { index: 2, start_ms: 0, end_ms: 5500, text: "先", id: "" },
+    { index: 9, start_ms: 5000, end_ms: 6000, text: "后", id: "", },
+    { index: 2, start_ms: 0, end_ms: 5500, text: "先", id: "", },
   ])
   let r = Subtitle::merge_overlaps(s)
   inspect(r.cues.length(), content="1")

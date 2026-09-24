@@ -100,6 +100,7 @@ pub fn Subtitle::strip_markup(self : Subtitle) -> Subtitle {
   { cues: out, }
 }
 
+///|
 test "strip_tags 删掉常见的排版标签" {
   inspect(strip_tags("<b>加粗</b>"), content="加粗")
   inspect(strip_tags("<i>斜体</i>"), content="斜体")
@@ -107,35 +108,42 @@ test "strip_tags 删掉常见的排版标签" {
   inspect(strip_tags("<v 张三>说话的人</v>"), content="说话的人")
 }
 
+///|
 test "strip_tags 删掉 WebVTT 的时间戳标签" {
   inspect(strip_tags("<00:00:01.000>卡拉OK"), content="卡拉OK")
 }
 
+///|
 test "strip_tags 不碰不配对的尖括号" {
   inspect(strip_tags("3 < 5"), content="3 < 5")
   inspect(strip_tags("a <b 少了右括号"), content="a <b 少了右括号")
 }
 
+///|
 test "strip_tags 保留夹在中间的正文" {
   inspect(strip_tags("<b>前</b>中间<i>后</i>"), content="前中间后")
 }
 
+///|
 test "strip_tags 对空串和纯文本不动" {
   inspect(strip_tags(""), content="")
   inspect(strip_tags("没有标记的一行"), content="没有标记的一行")
 }
 
+///|
 test "decode_entities 解掉常见实体" {
   inspect(decode_entities("A &amp; B"), content="A & B")
   inspect(decode_entities("&lt;标签&gt;"), content="<标签>")
   inspect(decode_entities("不留痕迹&lrm;"), content="不留痕迹")
 }
 
+///|
 test "decode_entities 不把 &amp;lt; 解成尖括号" {
   // 原文写的是 &amp;lt;，读者该看到的是字面的 "&lt;"
   inspect(decode_entities("&amp;lt;"), content="&lt;")
 }
 
+///|
 test "strip_markup 只改正文" {
   let s = Subtitle::from_cues([
     {
@@ -154,9 +162,10 @@ test "strip_markup 只改正文" {
   inspect(r.cues[0].id, content="intro")
 }
 
+///|
 test "strip_markup 之后渲染出的 SRT 是纯文本" {
   let s = Subtitle::from_cues([
-    { index: 1, start_ms: 1000, end_ms: 2000, text: "<i>斜体</i>", id: "" },
+    { index: 1, start_ms: 1000, end_ms: 2000, text: "<i>斜体</i>", id: "", },
   ])
   inspect(
     Subtitle::strip_markup(s).render_srt(),
