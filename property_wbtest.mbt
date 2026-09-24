@@ -10,7 +10,7 @@
 /// 能构造 `Cue`。黑盒测试文件（`*_test.mbt`）会被编成独立的包，拿不到包内类型。
 
 ///|
-/// 两条字幕的条数、时间、正文是否完全一致。
+/// 两条字幕的条数、时间、正文、标识是否完全一致。
 ///
 /// `Cue` 没有 derive `Eq`：时间合法性由解析函数把关，多一套相等语义没有用。
 /// 测试里手动比一遍反而更清楚在比什么。
@@ -23,7 +23,10 @@ fn same_subtitle(a : Subtitle, b : Subtitle) -> Bool {
     while i < a.cues.length() {
       let x = a.cues[i]
       let y = b.cues[i]
-      if x.start_ms != y.start_ms || x.end_ms != y.end_ms || x.text != y.text {
+      if x.start_ms != y.start_ms ||
+        x.end_ms != y.end_ms ||
+        x.text != y.text ||
+        x.id != y.id {
         ok = false
       }
       i = i + 1
@@ -55,6 +58,31 @@ fn subtitle_of(seed_values : Array[Int]) -> Subtitle {
       start_ms: start,
       end_ms: start + span,
       text: "行" + (i + 1).to_string(),
+      id: "",
+    })
+    i = i + 1
+  }
+  Subtitle::from_cues(cues)
+}
+
+///|
+/// 带 cue 标识的一份字幕，专供 WebVTT 往返测试。
+///
+/// 标识用 `c1` 这种短名字，因为规范禁止标识里出现换行和 `-->` ——
+/// 随机内容里混进箭头会把标识行变成时间行，那已经不是合法输入，
+/// 拿它去测解析器没有意义。
+fn subtitle_with_ids_of(seed_values : Array[Int]) -> Subtitle {
+  let cues : Array[Cue] = []
+  let mut i = 0
+  while i < seed_values.length() {
+    let start = positive(seed_values[i] % 3600000)
+    let span = positive(seed_values[i] % 4000)
+    cues.push({
+      index: i + 1,
+      start_ms: start,
+      end_ms: start + span,
+      text: "行" + (i + 1).to_string(),
+      id: "c" + (i + 1).to_string(),
     })
     i = i + 1
   }
@@ -63,6 +91,10 @@ fn subtitle_of(seed_values : Array[Int]) -> Subtitle {
 
 ///|
 /// 走一圈 WebVTT，再走一圈 SRT，回到起点。
+///
+/// 传进来的字幕不能带标识：SRT 里没有放标识的地方，带了必然丢，
+/// 那属于格式限制而不是缺陷。拿它当失败信号只会得到一个永远红的测试，
+/// 所以这一条用不带标识的 `subtitle_of`。
 fn roundtrip_vtt_then_srt(s : Subtitle) -> Bool {
   match parse_vtt(s.render_vtt()) {
     Ok(as_vtt) =>
@@ -99,6 +131,20 @@ test "WebVTT 渲染再解析是恒等变换" {
     },
     count=200,
     seed=20260925,
+  )
+}
+
+test "带标识的 WebVTT 渲染再解析也是恒等变换" {
+  @quickcheck.check(
+    (seed_values : Array[Int]) => {
+      let s = subtitle_with_ids_of(seed_values)
+      match parse_vtt(s.render_vtt()) {
+        Ok(back) => same_subtitle(s, back)
+        Err(_) => false
+      }
+    },
+    count=200,
+    seed=20260927,
   )
 }
 

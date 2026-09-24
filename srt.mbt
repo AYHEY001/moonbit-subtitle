@@ -49,7 +49,16 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
             Some(v) => v
             None => block_no
           }
-          cues.push({ index, start_ms, end_ms, text: join_body(block, 2) })
+          // SRT 没有 cue 标识这个概念，统一给空串。
+          // 从 WebVTT 转过来的文件在这一步会丢掉标识，这是格式本身决定的 ——
+          // SRT 里没有地方放它，不是实现偷懒。
+          cues.push({
+            index,
+            start_ms,
+            end_ms,
+            text: join_body(block, 2),
+            id: "",
+          })
         }
         Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
       }
@@ -61,6 +70,7 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
         start_ms: prev.start_ms,
         end_ms: prev.end_ms,
         text: prev.text + "\n\n" + join_body(block, 0),
+        id: prev.id,
       }
     } else {
       return Err("文件开头不是序号行，第一行是：" + block[0].to_owned())

@@ -9,11 +9,11 @@
 ///   - 时间行右侧可以有排版设置：`align:start position:10%`
 ///   - `NOTE` 开头的块是注释，`STYLE` / `REGION` 开头的块是样式与区域定义，都不是字幕
 ///
-/// 已知取舍，两处都不打算在 MVP 里做：
-///   - 正文里的 `<b>` `<c.classname>` 这类标记按原样保留，不剥离。
-///     剥离需要在渲染成 SRT 时再补一层清洗，属于另一个功能。
-///   - cue 标识解析时读掉但不保存（`Cue` 里没有这个字段），
-///     所以带标识的 VTT 转一圈回来标识会消失。渲染出来仍是合法 VTT。
+/// cue 标识（时间行前面那一行）读进 `Cue::id` 并原样写回，转一圈不丢。
+/// SRT 里没有这个概念，所以 VTT → SRT 这一步标识一定会掉 —— 格式里没有地方放它。
+///
+/// 正文里的 `<b>` `<c.classname>` 这类标记按原样保留。WebVTT 的标记在 SRT 里
+/// 同样被播放器识别，默认洗掉反而丢信息。需要纯文本时显式调 `Subtitle::strip_markup`。
 
 ///|
 /// 解析 WebVTT 时间戳。两段式（`MM:SS.mmm`）时补一个零小时段，
@@ -40,6 +40,20 @@ fn is_vtt_special_block(line : StringView) -> Bool {
   trimmed.has_prefix("STYLE ") ||
   trimmed.equal("REGION") ||
   trimmed.has_prefix("REGION ")
+}
+
+///|
+/// 取这一块的 cue 标识：紧跟时间行前面那一行。
+///
+/// 规范里一个 cue 最多一个标识，所以只认紧邻时间行的那一行。
+/// 前面若还有别的行（`WEBVTT` 头之后没留空行的写法），那部分按文件头元数据处理 ——
+/// 这种写法本身就不符合规范，规范要求头与第一条 cue 之间空一行。
+fn cue_id_from(content : Array[StringView], time_at : Int) -> String {
+  if time_at == 0 {
+    ""
+  } else {
+    content[time_at - 1].trim().to_owned()
+  }
 }
 
 ///|
@@ -90,6 +104,7 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
           start_ms,
           end_ms,
           text: join_body(content, time_at + 1),
+          id: cue_id_from(content, time_at),
         })
       }
       Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
@@ -109,10 +124,15 @@ fn format_vtt_timestamp(ms : Int) -> String {
 ///
 /// 小时固定输出两位，即使整份文件都在一小时以内 —— 规范允许省略，
 /// 但补全之后 SRT 和 WebVTT 的时间戳逐字对齐，肉眼比对时省事。
+///
+/// 有标识的 cue 把标识写在时间行上面一行。没有标识就不写，
+/// 文件仍然合法，只是 `::cue(#intro)` 这类选择器会失配。
 pub fn Subtitle::render_vtt(self : Subtitle) -> String {
   let blocks : Array[String] = []
   for c in self.cues {
+    let id_line = if c.id.is_empty() { "" } else { c.id + "\n" }
     blocks.push(
+      id_line +
       format_vtt_timestamp(c.start_ms) +
       " --> " +
       format_vtt_timestamp(c.end_ms) +
@@ -171,14 +191,104 @@ test "parse_vtt 允许省略小时" {
   inspect(s.cues[0].end_ms, content="85000")
 }
 
-test "parse_vtt 忽略 cue 标识行" {
+test "parse_vtt 把 cue 标识读进 id" {
   let text = "WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
   inspect(s.cues.length(), content="1")
+  inspect(s.cues[0].id, content="intro")
   inspect(s.cues[0].text, content="第一行")
+}
+
+test "parse_vtt 没有标识时 id 是空串" {
+  let s = match parse_vtt(sample_vtt) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.cues[0].id, content="")
+}
+
+test "render_vtt 把标识写回去" {
+  let text = "WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let rendered = match parse_vtt(text) {
+    Ok(s) => s.render_vtt()
+    Err(_) => ""
+  }
+  inspect(rendered, content=text)
+}
+
+test "多条标识的 VTT 转一圈不丢" {
+  let text = (
+    #|WEBVTT
+    #|
+    #|intro
+    #|00:00:01.000 --> 00:00:04.000
+    #|第一行
+    #|
+    #|outro
+    #|00:00:05.000 --> 00:00:08.000
+    #|第二行
+    #|
+  )
+  let rendered = match parse_vtt(text) {
+    Ok(s) => s.render_vtt()
+    Err(_) => ""
+  }
+  inspect(rendered, content=text)
+}
+
+test "标识行两侧的空白被清掉" {
+  let text = "WEBVTT\n\n  intro  \n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.cues[0].id, content="intro")
+}
+
+test "标识在 SRT 里存不下" {
+  let s = match parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // SRT 没有放标识的地方，转过去就没了 —— 格式限制，不是实现漏做
+  let back = match parse_srt(s.render_srt()) {
+    Ok(v) => v
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(back.cues[0].id, content="")
+}
+
+test "shift 之后标识还在" {
+  let s = match parse_vtt("WEBVTT\n\nintro\n00:00:01.000 --> 00:00:04.000\n第一行\n") {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::shift(s, 500).cues[0].id, content="intro")
+}
+
+test "normalize 之后标识跟着条目走" {
+  let text = (
+    #|WEBVTT
+    #|
+    #|b
+    #|00:00:05.000 --> 00:00:06.000
+    #|后
+    #|
+    #|a
+    #|00:00:01.000 --> 00:00:02.000
+    #|先
+    #|
+  )
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  let r = Subtitle::normalize(s)
+  inspect(r.cues[0].id, content="a")
+  inspect(r.cues[1].id, content="b")
 }
 
 test "parse_vtt 忽略时间行右侧的排版设置" {
