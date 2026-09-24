@@ -103,22 +103,22 @@ pub fn format_timestamp(ms : Int) -> String {
 /// `test { }` 块和源代码在同一个包里，可以直接访问包内私有成员。
 
 test "parse_timestamp 解析正常输入" {
-  inspect(parse_timestamp("00:01:23,456"), content="Some(83456)")
+  debug_inspect(parse_timestamp("00:01:23,456"), content="Some(83456)")
 }
 
 test "parse_timestamp 兼容 VTT 的句点分隔" {
-  inspect(parse_timestamp("00:01:23.456"), content="Some(83456)")
+  debug_inspect(parse_timestamp("00:01:23.456"), content="Some(83456)")
 }
 
 test "parse_timestamp 允许小时超过两位" {
-  inspect(parse_timestamp("100:00:00,000"), content="Some(360000000)")
+  debug_inspect(parse_timestamp("100:00:00,000"), content="Some(360000000)")
 }
 
 test "parse_timestamp 拒绝格式不合法的输入" {
-  inspect(parse_timestamp("1:2,3"), content="None")
-  inspect(parse_timestamp(""), content="None")
-  inspect(parse_timestamp("00:00:00,45"), content="None")
-  inspect(parse_timestamp("aa:bb:cc,ddd"), content="None")
+  debug_inspect(parse_timestamp("1:2,3"), content="None")
+  debug_inspect(parse_timestamp(""), content="None")
+  debug_inspect(parse_timestamp("00:00:00,45"), content="None")
+  debug_inspect(parse_timestamp("aa:bb:cc,ddd"), content="None")
 }
 
 test "format_timestamp 毫秒补足三位" {
