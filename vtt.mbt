@@ -110,13 +110,14 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
     }
     match parse_time_range(content[time_at], parse_vtt_timestamp) {
       Ok(range) => {
-        let (start_ms, end_ms) = range
+        let (start_ms, end_ms, settings) = range
         cues.push({
           index: cues.length() + 1,
           start_ms,
           end_ms,
           text: join_body(content, time_at + 1),
           id: cue_id_from(content, time_at),
+          settings,
         })
       }
       Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
@@ -159,6 +160,10 @@ fn push_extras_at(
 /// 有标识的 cue 把标识写在时间行上面一行。没有标识就不写，
 /// 文件仍然合法，只是 `::cue(#intro)` 这类选择器会失配。
 ///
+/// 排版设置写回时间行右侧，只写 WebVTT 自己的那套键名。
+/// 从 SRT 转过来的 cue 带的是 `X1:100` 这类坐标，不是 WebVTT 的语法，
+/// 写进去会让时间行变成非法 —— 那种情况丢掉。
+///
 /// `extras` 里那些 `NOTE` / `STYLE` / `REGION` 块按 `before_pos` 插回原位：
 /// 插在第几条 cue 之前就是第几条之前，越界的排在末尾。
 /// 文件里本来没有这类块时，渲染结果和前几版完全一样。
@@ -181,11 +186,17 @@ pub fn Subtitle::render_vtt(self : Subtitle) -> String {
   push_extras_at(parts, self.extras, at, cursor)
   for c in self.cues {
     let id_line = if c.id.is_empty() { "" } else { c.id + "\n" }
+    let tail = if c.settings.is_empty() || is_srt_settings(c.settings) {
+      ""
+    } else {
+      " " + c.settings
+    }
     parts.push(
       id_line +
       format_vtt_timestamp(c.start_ms) +
       " --> " +
       format_vtt_timestamp(c.end_ms) +
+      tail +
       "\n" +
       c.text,
     )
@@ -355,13 +366,86 @@ test "normalize 之后标识跟着条目走" {
 }
 
 ///|
-test "parse_vtt 忽略时间行右侧的排版设置" {
+test "parse_vtt 留下时间行右侧的排版设置" {
   let text = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000 align:start position:10%\n第一行\n"
   let s = match parse_vtt(text) {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
   inspect(s.cues[0].end_ms, content="4000")
+  inspect(s.cues[0].settings, content="align:start position:10%")
+  // 时间戳和设置的分界不能切错，转一圈要逐字回到原样
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "设置多个键也留得住" {
+  let text =
+    #|WEBVTT
+    #|
+    #|00:00:01.000 --> 00:00:04.000 align:end line:0 position:80% size:40%
+    #|第一行
+    #|
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.cues[0].settings, content="align:end line:0 position:80% size:40%")
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "设置跟着 shift 与 normalize 走" {
+  let text =
+    #|WEBVTT
+    #|
+    #|00:00:05.000 --> 00:00:06.000 align:start
+    #|后
+    #|
+    #|00:00:01.000 --> 00:00:02.000 align:end
+    #|先
+    #|
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::shift(s, 500).cues[0].settings, content="align:start")
+  let r = Subtitle::normalize(s)
+  inspect(r.cues[0].settings, content="align:end")
+  inspect(r.cues[1].settings, content="align:start")
+}
+
+///|
+test "SRT 的坐标转进 WebVTT 会被丢掉" {
+  let s = match
+    parse_srt("1\n00:00:01,000 --> 00:00:04,000 X1:100 X2:500\n第一行\n") {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // X1:100 不是 WebVTT 的键，原样写进时间行会让播放器读不懂整行
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+  )
+}
+
+///|
+test "导出成 SRT 时设置按格式取舍" {
+  let text =
+    #|WEBVTT
+    #|
+    #|00:00:01.000 --> 00:00:04.000 align:start
+    #|第一行
+    #|
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // align:start 是 WebVTT 的语法，SRT 的时间行里没有它的位置
+  inspect(
+    s.render_srt(),
+    content="1\n00:00:01,000 --> 00:00:04,000\n第一行\n",
+  )
 }
 
 ///|
@@ -472,7 +556,14 @@ test "只有样式块、没有 cue 的文件也能转一圈" {
 ///|
 test "extras 落点越界时排到末尾" {
   let cues : Array[Cue] = [
-    { index: 1, start_ms: 1000, end_ms: 4000, text: "第一行", id: "", },
+    {
+      index: 1,
+      start_ms: 1000,
+      end_ms: 4000,
+      text: "第一行",
+      id: "",
+      settings: "",
+    },
   ]
   let s = Subtitle::with_extras(cues, [
     { kind: "NOTE", text: "NOTE 记一笔", before_pos: 99, },

@@ -102,6 +102,28 @@ fn first_token(part : StringView) -> String {
 }
 
 ///|
+/// 取第一个词之后剩下的部分。
+///
+/// 时间行右侧的排版设置靠这个抓出来：`00:00:04,000 X1:100 X2:500`
+/// 拿掉时间戳之后就是 `X1:100 X2:500`。
+/// 中间连续的空白压成一个空格 —— 设置项之间本来也只该有一个空格。
+fn rest_after_first_token(part : StringView) -> String {
+  let tokens = part.trim().split(" ").to_array()
+  if tokens.length() <= 1 {
+    return ""
+  }
+  let out : Array[String] = []
+  let mut i = 1
+  while i < tokens.length() {
+    if !tokens[i].trim().is_empty() {
+      out.push(tokens[i].to_owned())
+    }
+    i = i + 1
+  }
+  out.join(" ").trim().to_owned()
+}
+
+///|
 /// 把若干行正文拼成一条字幕的文本，行之间用换行连接。
 /// 不从 `block[2:]` 这种切片写法入手，理由同 `tail_from`。
 fn join_body(block : Array[StringView], from : Int) -> String {
@@ -118,30 +140,92 @@ fn join_body(block : Array[StringView], from : Int) -> String {
 }
 
 ///|
-/// 解析时间行，返回（开始毫秒，结束毫秒）。
+/// 解析时间行，返回（开始毫秒，结束毫秒，右侧排版设置原文）。
 ///
 /// 时间戳怎么解析由调用方传进来：SRT 用 `parse_timestamp`（必须带小时），
 /// WebVTT 用 `parse_vtt_timestamp`（小时可省）。除了这一点，两种格式的时间行
 /// 处理完全一样，所以只写一份。
+///
+/// 第三个值是时间行右侧的原文 —— SRT 的 `X1:100 X2:500`、WebVTT 的
+/// `align:start position:10%`，没有就是空串。这一版开始收着它，
+/// 之前是读完就丢，转换一圈回来字幕位置会掉回播放器默认值。
 fn parse_time_range(
   line : StringView,
   parse : (String) -> Int?,
-) -> Result[(Int, Int), String] {
+) -> Result[(Int, Int, String), String] {
   let parts = line.split("-->").to_array()
   if parts.length() != 2 {
     return Err("时间行缺少 \"-->\"：" + line.to_owned())
   }
   let right_text = first_token(parts[1])
+  let settings = rest_after_first_token(parts[1])
   match (parse(parts[0].trim().to_owned()), parse(right_text)) {
     (Some(start), Some(end)) =>
       if end < start {
         Err("结束时间早于开始时间：" + line.to_owned())
       } else {
-        Ok((start, end))
+        Ok((start, end, settings))
       }
     (None, _) => Err("开始时间无法解析：" + parts[0].to_owned())
     (_, None) => Err("结束时间无法解析：" + right_text)
   }
+}
+
+///|
+/// 取设置里的键名：`align:start position:10%` → `["align", "position"]`。
+/// 没有冒号的片段不算设置项，跳过 —— 时间行后面偶尔会跟一些自由文本。
+fn setting_keys(settings : String) -> Array[String] {
+  let keys : Array[String] = []
+  for token in settings.split(" ").to_array() {
+    let parts = token.split(":").to_array()
+    if parts.length() >= 2 && !parts[0].trim().is_empty() {
+      keys.push(parts[0].trim().to_owned())
+    }
+  }
+  keys
+}
+
+///|
+/// 这段设置的键名是不是全都落在一个白名单里，空设置不算。
+fn all_keys_in(settings : String, allowed : Array[String]) -> Bool {
+  let keys = setting_keys(settings)
+  if keys.is_empty() {
+    false
+  } else {
+    let mut ok = true
+    for k in keys {
+      let mut hit = false
+      for a in allowed {
+        if k == a {
+          hit = true
+        }
+      }
+      if !hit {
+        ok = false
+      }
+    }
+    ok
+  }
+}
+
+///|
+/// 这段设置是不是 WebVTT 的语法。
+///
+/// WebVTT 的 cue 设置键由规范固定，一共六个：`align` / `line` / `position` /
+/// `region` / `size` / `vertical`。集合小且封闭，认起来可靠。
+fn is_vtt_settings(settings : String) -> Bool {
+  all_keys_in(settings, [
+    "align", "line", "position", "region", "size", "vertical",
+  ])
+}
+
+///|
+/// 这段设置是不是 SRT 的坐标语法：`X1:100 Y1:20 X2:500 Y2:600`。
+///
+/// SRT 没有官方规范，这几个键是社区通行的写法（`SubRip` 里叫坐标）。
+/// 与 WebVTT 的六个键完全没有交集，所以两种格式能靠键名区分开。
+fn is_srt_settings(settings : String) -> Bool {
+  all_keys_in(settings, ["X1", "X2", "Y1", "Y2"])
 }
 
 ///|
@@ -177,4 +261,34 @@ test "first_token 只取第一个词" {
 test "join_body 保留正文换行" {
   let lines = "x\na\nb".split("\n").to_array()
   inspect(join_body(lines, 1), content="a\nb")
+}
+
+///|
+test "rest_after_first_token 取走时间戳之后的设置" {
+  inspect(
+    rest_after_first_token(" 00:00:04,000 X1:100 X2:500 "),
+    content="X1:100 X2:500",
+  )
+  inspect(rest_after_first_token(" 00:00:04,000 "), content="")
+  // 时间戳后面跟了不止一个空格，收完要压成一个
+  inspect(rest_after_first_token(" 00:00:04,000  X1:100 "), content="X1:100")
+}
+
+///|
+test "is_vtt_settings 认 WebVTT 的六个键" {
+  inspect(is_vtt_settings("align:start"), content="true")
+  inspect(is_vtt_settings("align:start position:10% line:0"), content="true")
+  inspect(is_vtt_settings("X1:100"), content="false")
+  // 空设置不算任何一种语法，交给调用方按"没有设置"处理
+  inspect(is_vtt_settings(""), content="false")
+  // 掺了一个不认识的键，就不是纯 WebVTT 语法了
+  inspect(is_vtt_settings("align:start foo:1"), content="false")
+}
+
+///|
+test "is_srt_settings 认坐标的四个键" {
+  inspect(is_srt_settings("X1:100 X2:500"), content="true")
+  inspect(is_srt_settings("X1:100 Y1:20 X2:500 Y2:600"), content="true")
+  inspect(is_srt_settings("align:start"), content="false")
+  inspect(is_srt_settings(""), content="false")
 }

@@ -50,7 +50,7 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
       }
       match parse_time_range(block[1], parse_timestamp) {
         Ok(range) => {
-          let (start_ms, end_ms) = range
+          let (start_ms, end_ms, settings) = range
           // 序号照原样留着，不做重新编号 —— 那件事归 normalize
           let index = match digits_to_int(block[0].trim()) {
             Some(v) => v
@@ -65,6 +65,7 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
             end_ms,
             text: join_body(block, 2),
             id: "",
+            settings,
           })
         }
         Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
@@ -78,6 +79,7 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
         end_ms: prev.end_ms,
         text: prev.text + "\n\n" + join_body(block, 0),
         id: prev.id,
+        settings: prev.settings,
       }
     } else {
       return Err(
@@ -94,6 +96,10 @@ pub fn parse_srt(input : String) -> Result[Subtitle, String] {
 /// 每条字幕自己不带结尾空行，块之间用空行连接，最后补一个换行 ——
 /// 这样输出和常见的 SRT 文件逐字节一致，往返测试才能直接比字符串。
 ///
+/// 排版设置写回时间行右侧，但只写 SRT 自己的坐标语法。
+/// 从 WebVTT 转过来的 cue 带的是 `align:start` 这类设置，写进 SRT 的时间行
+/// 会让播放器读不懂整行 —— 那种情况丢掉，格式限制不是实现漏做。
+///
 /// 定义为 `Subtitle::render_srt` 而不是自由函数：跟 shift / normalize 一样挂在类型上，
 /// 调用处写 `s.render_srt()` 更顺。
 pub fn Subtitle::render_srt(self : Subtitle) -> String {
@@ -103,12 +109,18 @@ pub fn Subtitle::render_srt(self : Subtitle) -> String {
   let blocks : Array[String] = []
   let mut index = 1
   for c in self.cues {
+    let tail = if c.settings.is_empty() || is_vtt_settings(c.settings) {
+      ""
+    } else {
+      " " + c.settings
+    }
     blocks.push(
       index.to_string() +
       "\n" +
       format_timestamp(c.start_ms) +
       " --> " +
       format_timestamp(c.end_ms) +
+      tail +
       "\n" +
       c.text,
     )
@@ -193,7 +205,7 @@ test "parse_srt 保留多行正文" {
 }
 
 ///|
-test "parse_srt 容忍时间行多余空格与排版坐标" {
+test "parse_srt 容忍时间行多余空格并留下排版坐标" {
   let text = "1\n  00:00:01,000  -->  00:00:04,000 X1:100 X2:500  \n第一行\n"
   let s = match parse_srt(text) {
     Ok(s) => s
@@ -201,6 +213,31 @@ test "parse_srt 容忍时间行多余空格与排版坐标" {
   }
   inspect(s.cues[0].start_ms, content="1000")
   inspect(s.cues[0].end_ms, content="4000")
+  // 坐标与时间戳之间连着几个空格，收进来时压成一个；行尾空白不留
+  inspect(s.cues[0].settings, content="X1:100 X2:500")
+}
+
+///|
+test "带坐标的 SRT 转一圈逐字不变" {
+  let text = "1\n00:00:01,000 --> 00:00:04,000 X1:100 X2:500 Y1:20 Y2:60\n第一行\n"
+  let rendered = match parse_srt(text) {
+    Ok(s) => s.render_srt()
+    Err(_) => ""
+  }
+  inspect(rendered, content=text)
+}
+
+///|
+test "坐标跟着 shift 与 normalize 走" {
+  let text = "1\n00:00:05,000 --> 00:00:06,000 X1:100\n后\n\n2\n00:00:01,000 --> 00:00:02,000 X1:200\n先\n"
+  let s = match parse_srt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::shift(s, 500).cues[0].settings, content="X1:100")
+  let r = Subtitle::normalize(s)
+  inspect(r.cues[0].settings, content="X1:200")
+  inspect(r.cues[1].settings, content="X1:100")
 }
 
 ///|

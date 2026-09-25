@@ -84,8 +84,8 @@ fn decode_entities(text : String) -> String {
 ///|
 /// 把每条字幕的正文转成纯文本：先删标签，再解实体。
 ///
-/// 只动 `text`，时间、序号、标识原样保留 —— 剥标记是为了拿文本，
-/// 不是为了让时间轴也变样。
+/// 只动 `text`，时间、序号、标识、排版设置原样保留 —— 剥标记是为了拿文本，
+/// 不是为了让时间轴和字幕位置也变样。
 ///
 /// `extras` 也不动。`STYLE` 块里装的是 CSS，里面有 `::cue` 这样的选择器、
 /// 也可能有 `>` 子选择器和 `&` 之类的字符，按正文那套规则洗一遍只会把样式弄坏。
@@ -98,6 +98,7 @@ pub fn Subtitle::strip_markup(self : Subtitle) -> Subtitle {
       end_ms: c.end_ms,
       text: decode_entities(strip_tags(c.text)),
       id: c.id,
+      settings: c.settings,
     })
   }
   { cues: out, extras: self.extras, }
@@ -155,6 +156,7 @@ test "strip_markup 只改正文" {
       end_ms: 4000,
       text: "<b>加粗</b> &amp; 普通",
       id: "intro",
+      settings: "align:start",
     },
   ])
   let r = Subtitle::strip_markup(s)
@@ -163,12 +165,21 @@ test "strip_markup 只改正文" {
   inspect(r.cues[0].start_ms, content="1000")
   inspect(r.cues[0].end_ms, content="4000")
   inspect(r.cues[0].id, content="intro")
+  // 剥标记只该动正文，位置设置要原样留着
+  inspect(r.cues[0].settings, content="align:start")
 }
 
 ///|
 test "strip_markup 之后渲染出的 SRT 是纯文本" {
   let s = Subtitle::from_cues([
-    { index: 1, start_ms: 1000, end_ms: 2000, text: "<i>斜体</i>", id: "", },
+    {
+      index: 1,
+      start_ms: 1000,
+      end_ms: 2000,
+      text: "<i>斜体</i>",
+      id: "",
+      settings: "",
+    },
   ])
   inspect(
     Subtitle::strip_markup(s).render_srt(),

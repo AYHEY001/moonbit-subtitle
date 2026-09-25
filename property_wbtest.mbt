@@ -10,7 +10,7 @@
 /// 能构造 `Cue`。黑盒测试文件（`*_test.mbt`）会被编成独立的包，拿不到包内类型。
 
 ///|
-/// 两条字幕的条数、时间、正文、标识是否完全一致。
+/// 两条字幕的条数、时间、正文、标识、排版设置是否完全一致。
 ///
 /// `Cue` 没有 derive `Eq`：时间合法性由解析函数把关，多一套相等语义没有用。
 /// 测试里手动比一遍反而更清楚在比什么。
@@ -26,7 +26,8 @@ fn same_subtitle(a : Subtitle, b : Subtitle) -> Bool {
       if x.start_ms != y.start_ms ||
         x.end_ms != y.end_ms ||
         x.text != y.text ||
-        x.id != y.id {
+        x.id != y.id ||
+        x.settings != y.settings {
         ok = false
       }
       i = i + 1
@@ -63,6 +64,7 @@ fn subtitle_of(seed_values : Array[Int]) -> Subtitle {
       end_ms: start + span,
       text: "行" + (i + 1).to_string(),
       id: "",
+      settings: "",
     })
     i = i + 1
   }
@@ -87,6 +89,59 @@ fn subtitle_with_ids_of(seed_values : Array[Int]) -> Subtitle {
       end_ms: start + span,
       text: "行" + (i + 1).to_string(),
       id: "c" + (i + 1).to_string(),
+      settings: "",
+    })
+    i = i + 1
+  }
+  Subtitle::from_cues(cues)
+}
+
+///|
+/// 带 WebVTT 排版设置的一份字幕，专供设置往返测试。
+///
+/// 用 `align` 与 `position` 两个键：`position` 的取值带 `%`，
+/// 正好也能验出"设置原文里除了空格还有别的符号"这种情况没被切坏。
+fn subtitle_with_vtt_settings_of(seed_values : Array[Int]) -> Subtitle {
+  let cues : Array[Cue] = []
+  let mut i = 0
+  while i < seed_values.length() {
+    let start = positive(seed_values[i] % 3600000)
+    let span = positive(seed_values[i] % 4000)
+    cues.push({
+      index: i + 1,
+      start_ms: start,
+      end_ms: start + span,
+      text: "行" + (i + 1).to_string(),
+      id: "",
+      settings: "align:start position:" + (i * 10 + 10).to_string() + "%",
+    })
+    i = i + 1
+  }
+  Subtitle::from_cues(cues)
+}
+
+///|
+/// 带 SRT 排版坐标的一份字幕，专供 SRT 往返测试。
+///
+/// 坐标用 `X1` / `Y1` / `X2` / `Y2` 四个键 —— SRT 没有官方规范，
+/// 这几个是社区通行的写法，也正是 `is_srt_settings` 认的那一组。
+fn subtitle_with_coords_of(seed_values : Array[Int]) -> Subtitle {
+  let cues : Array[Cue] = []
+  let mut i = 0
+  while i < seed_values.length() {
+    let start = positive(seed_values[i] % 3600000)
+    let span = positive(seed_values[i] % 4000)
+    cues.push({
+      index: i + 1,
+      start_ms: start,
+      end_ms: start + span,
+      text: "行" + (i + 1).to_string(),
+      id: "",
+      settings: "X1:" +
+      (i * 10).to_string() +
+      " Y1:20 X2:" +
+      (i * 10 + 100).to_string() +
+      " Y2:60",
     })
     i = i + 1
   }
@@ -109,6 +164,7 @@ fn subtitle_with_extras_of(seed_values : Array[Int]) -> Subtitle {
       end_ms: start + span,
       text: "行" + (i + 1).to_string(),
       id: "",
+      settings: "",
     })
     extras.push({
       kind: "NOTE",
@@ -199,6 +255,36 @@ test "带标识的 WebVTT 渲染再解析也是恒等变换" {
     },
     count=200,
     seed=20260927,
+  )
+}
+
+///|
+test "带排版设置的 WebVTT 渲染再解析不丢" {
+  @quickcheck.check(
+    (seed_values : Array[Int]) => {
+      let s = subtitle_with_vtt_settings_of(seed_values)
+      match parse_vtt(s.render_vtt()) {
+        Ok(back) => same_subtitle(s, back)
+        Err(_) => false
+      }
+    },
+    count=200,
+    seed=20260929,
+  )
+}
+
+///|
+test "带排版坐标的 SRT 渲染再解析不丢" {
+  @quickcheck.check(
+    (seed_values : Array[Int]) => {
+      let s = subtitle_with_coords_of(seed_values)
+      match parse_srt(s.render_srt()) {
+        Ok(back) => same_subtitle(s, back)
+        Err(_) => false
+      }
+    },
+    count=200,
+    seed=20260930,
   )
 }
 
