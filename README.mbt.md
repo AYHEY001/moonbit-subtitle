@@ -61,6 +61,29 @@ test "容错解析" {
 }
 ```
 
+## 排版设置
+
+时间行右侧的设置收进 `Cue::settings`，写回时只认同一种格式的键名。
+
+```mbt check
+///|
+test "排版设置" {
+  let srt = "1\n00:00:01,000 --> 00:00:04,000 X1:100 X2:500\n第一行\n"
+  let subtitle = match @moonbit-subtitle.parse_srt(srt) {
+    Ok(s) => s
+    Err(_) => panic()
+  }
+  inspect(subtitle.cues[0].settings, content="X1:100 X2:500")
+  // SRT 的坐标：转一圈原样回去
+  inspect(subtitle.render_srt(), content=srt)
+  // 换成 WebVTT 就没有它的位置了，两套键名没有交集
+  inspect(
+    subtitle.render_vtt(),
+    content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+  )
+}
+```
+
 ## 非字幕块
 
 `NOTE` / `STYLE` / `REGION` 收进 `extras`，渲染时回到原来的位置。
