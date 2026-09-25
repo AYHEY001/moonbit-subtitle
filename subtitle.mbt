@@ -85,18 +85,50 @@ fn clamp_to_zero(value : Int) -> Int {
 }
 
 ///|
+/// 把 `base + offset` 的结果夹到 `Int` 能表示的范围内再返回。
+///
+/// 不能直接写 `base + offset` 再判断符号：加法本身就会回绕，
+/// 回绕完的正数看不出异常、负数又会撞上 `clamp_to_zero` 被兜成 0，
+/// 两种都是把错误藏起来。所以这里在加法之前判断。
+///
+/// 上界截断而不是报错：调用方要求平移，截到能表示的最大时刻，
+/// 比整条命令失败更接近他要的结果；负值继续沿用"贴到 0"的既定行为。
+///
+/// 两种溢出方向不对称，判断也就不一样：
+///   - 正向溢出需要 `base > Int 上界 - offset`。这里 `offset > 0`，
+///     减法不会越界。
+///   - 负向溢出需要 `base < Int 下界 - offset`。`offset < 0` 时
+///     `Int 下界 - offset` 是"下界加一个正数"，同样不会越界。
+/// 所以这两个比较本身都是安全的，不会有"检查代码自己先溢出"的问题。
+fn checked_add_offset(base : Int, offset_ms : Int) -> Int {
+  if offset_ms > 0 && base > 2147483647 - offset_ms {
+    2147483647
+  } else if offset_ms < 0 && base < -2147483648 - offset_ms {
+    0
+  } else {
+    clamp_to_zero(base + offset_ms)
+  }
+}
+
+///|
 /// 整体平移时间轴。`offset_ms` 为正表示延后，为负表示提前。
 /// 平移后如果出现负时间，统一截断到 0 —— 负时间戳在播放器里没有意义。
 ///
 /// 注意这里没有做"越出片尾"的处理：字幕被推到视频结束之后，
 /// 播放器通常什么都不显示，这比截到片尾更符合直觉。
+///
+/// 平移量把某条字幕推出 `Int` 能表示的范围时截到上界，细节见 `checked_add_offset`。
+/// 极端情况下（平移量本身就有 596 小时量级）一前一后被顶到同一条上界的 cue
+/// 会退化成零长度，播放器可能不显示。没有为这种情况单独报错：这个量级的
+/// 平移在字幕里没有实际用途，而改 `shift` 的返回类型会牵动所有调用点，
+/// 代价大于收益。
 pub fn Subtitle::shift(self : Subtitle, offset_ms : Int) -> Subtitle {
   let out : Array[Cue] = []
   for c in self.cues {
     out.push({
       index: c.index,
-      start_ms: clamp_to_zero(c.start_ms + offset_ms),
-      end_ms: clamp_to_zero(c.end_ms + offset_ms),
+      start_ms: checked_add_offset(c.start_ms, offset_ms),
+      end_ms: checked_add_offset(c.end_ms, offset_ms),
       text: c.text,
       id: c.id,
       settings: c.settings,
@@ -153,7 +185,7 @@ pub fn Subtitle::scale(self : Subtitle, speed : Double) -> Subtitle {
 /// 输入不要求有序，内部会先按开始时间排一遍。
 pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
   let sorted = self.cues.copy()
-  sorted.sort_by((a, b) => a.start_ms - b.start_ms)
+  sorted.sort_by(compare_by_start)
   let out : Array[Cue] = []
   for c in sorted {
     match out.last() {
@@ -184,6 +216,22 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
 }
 
 ///|
+/// 按开始时间比较两条 cue，供排序使用。
+///
+/// 不用 `a.start_ms - b.start_ms`：那个减法的结果只用来定符号，
+/// 却可能在两端差距很大时回绕 —— `2147483647 - (-2147483648)` 回绕成 `-1`，
+/// 排序会把这些 cue 放到错误的位置。直接用比较，不产生中间值。
+fn compare_by_start(a : Cue, b : Cue) -> Int {
+  if a.start_ms < b.start_ms {
+    -1
+  } else if a.start_ms > b.start_ms {
+    1
+  } else {
+    0
+  }
+}
+
+///|
 /// 按开始时间重新排序，并把 cue 的序号重排成 1..n。
 /// 手工改过字幕文件之后，序号和时间顺序经常对不上。
 ///
@@ -191,7 +239,7 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
 /// 这样规范化只做它该做的事，不会顺手把别的顺序也改了。
 pub fn Subtitle::normalize(self : Subtitle) -> Subtitle {
   let sorted = self.cues.copy()
-  sorted.sort_by((a, b) => a.start_ms - b.start_ms)
+  sorted.sort_by(compare_by_start)
   let out : Array[Cue] = []
   let mut index = 1
   for c in sorted {
@@ -260,6 +308,67 @@ test "shift 不产生负时间" {
     },
   ])
   let r = Subtitle::shift(s, -3000)
+  inspect(r.cues[0].start_ms, content="0")
+  inspect(r.cues[0].end_ms, content="0")
+}
+
+///|
+/// 加法要判溢出，不能让结果回绕。
+/// 修之前 `2000000000 + 200000000` 本该是 `2200000000`，
+/// 实际回绕成负数、又被"负时间贴到 0"这条规则兜成 `0` ——
+/// 输出一条时间轴完全错掉但格式合法的字幕。
+test "shift 正向溢出截到上界" {
+  let s = Subtitle::from_cues([
+    {
+      index: 1,
+      start_ms: 2000000000,
+      end_ms: 2100000000,
+      text: "你好",
+      id: "",
+      settings: "",
+    },
+  ])
+  let r = Subtitle::shift(s, 200000000)
+  inspect(r.cues[0].start_ms, content="2147483647")
+  inspect(r.cues[0].end_ms, content="2147483647")
+}
+
+///|
+/// 不溢出的时候不能误判。`2147483647 - 1` 正好在上界内。
+test "shift 在上界内的加法不受影响" {
+  let s = Subtitle::from_cues([
+    {
+      index: 1,
+      start_ms: 2147483646,
+      end_ms: 2147483647,
+      text: "你好",
+      id: "",
+      settings: "",
+    },
+  ])
+  let r = Subtitle::shift(s, 1)
+  inspect(r.cues[0].start_ms, content="2147483647")
+  inspect(r.cues[0].end_ms, content="2147483647")
+  // 负向同理：等于下界，不溢出，正常贴到 0
+  let r2 = Subtitle::shift(s, -2147483647)
+  inspect(r2.cues[0].start_ms, content="0")
+  inspect(r2.cues[0].end_ms, content="0")
+}
+
+///|
+/// `Int` 下界本身也是一个要接住的输入 —— 检查代码自己不能先溢出。
+test "shift 极负的平移量不把检查本身撑破" {
+  let s = Subtitle::from_cues([
+    {
+      index: 1,
+      start_ms: 1000,
+      end_ms: 2000,
+      text: "你好",
+      id: "",
+      settings: "",
+    },
+  ])
+  let r = Subtitle::shift(s, -2147483648)
   inspect(r.cues[0].start_ms, content="0")
   inspect(r.cues[0].end_ms, content="0")
 }
@@ -361,6 +470,34 @@ test "normalize 重排序号" {
   let r = Subtitle::normalize(s)
   inspect(r.cues[0].text, content="先")
   inspect(r.cues[0].index, content="1")
+}
+
+///|
+/// 排序比较不能用 `a - b`。两端差距足够大时那个减法会回绕，
+/// 符号翻过来，先出现的会被排到后面。
+/// 这里的两个时间跨度接近整个 `Int` 范围，正是会翻的那种。
+test "normalize 在极端时间差下排序仍然正确" {
+  let s = Subtitle::from_cues([
+    {
+      index: 1,
+      start_ms: 2147483647,
+      end_ms: 2147483647,
+      text: "大",
+      id: "",
+      settings: "",
+    },
+    {
+      index: 2,
+      start_ms: -2147483648,
+      end_ms: -2147483648,
+      text: "小",
+      id: "",
+      settings: "",
+    },
+  ])
+  let r = Subtitle::normalize(s)
+  inspect(r.cues[0].text, content="小")
+  inspect(r.cues[1].text, content="大")
 }
 
 ///|

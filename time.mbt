@@ -11,10 +11,18 @@
 /// MoonBit 核心库没有内置正则，`moonbitlang/regexp` 目前还是 alpha 状态。
 
 ///|
-/// 把纯数字串换算成整数。空串，或者含有非数字字符，都返回 `None`。
+/// 把纯数字串换算成整数。空串、含有非数字字符、或者数值超出 `Int` 范围，都返回 `None`。
 ///
 /// 核心库没有字符串转整数的接口（`strconv` 包是空的），所以自己按位累加。
 /// 这里不做负数、正号、前导空白这些处理：时间戳的每一段都只可能是数字。
+///
+/// **累加必须判溢出。** 直接 `acc * 10 + d` 在超出 32 位有符号整数范围时会
+/// 静默回绕（`2147483647` 读成 `-1`，更长的串读成一个看似正常的中间值），
+/// 调用方拿到的是一个错误但合法的数字，没有任何地方能察觉。
+/// 这里的判法把上界 2147483647 拆成 `(2147483647 / 10) * 10 + 7`：
+/// 先比高位，高位相等再比末位，全程只用整数运算，不会自己先溢出。
+///
+/// 超范围直接返回 `None`，跟"格式不合法"走同一条路 —— 都是"这个数字不能用"。
 fn digits_to_int(v : StringView) -> Int? {
   if v.is_empty() {
     None
@@ -23,7 +31,13 @@ fn digits_to_int(v : StringView) -> Int? {
     let mut ok = true
     for c in v.iter() {
       if c.is_ascii_digit() {
-        acc = acc * 10 + (c.to_int() - 48)
+        let d = c.to_int() - 48
+        // 溢出检查必须在乘之前做：乘完再比就已经晚了，值已经回绕了
+        if acc > 214748364 || (acc == 214748364 && d > 7) {
+          ok = false
+        } else {
+          acc = acc * 10 + d
+        }
       } else {
         ok = false
       }
@@ -38,10 +52,15 @@ fn digits_to_int(v : StringView) -> Int? {
 
 ///|
 /// 把 `00:01:23,456` 或 `00:01:23.456` 解析为毫秒数。
-/// 格式不合法时返回 `None`。
+/// 格式不合法、或者数值超出可表示范围时返回 `None`。
 ///
 /// 宽容的地方：两端空白、毫秒分隔符用逗号还是句点、小时超过两位。
 /// 不放宽的地方：毫秒必须恰好三位，分和秒必须小于 60。
+///
+/// **小时要单独限一个上界。** 小时段的乘数是 3600000，是这里最大的一处，
+/// 任它多大都会溢出。上限取 `Int 上界 ÷ 3600000` = 596 小时（约 24.8 天）——
+/// 再长的字幕没有实际意义，而且此时总量已经逼近 32 位上界，
+/// 后续 `shift` 加上偏移量也会溢出。所以宁可在这里明确拒绝。
 pub fn parse_timestamp(raw : String) -> Int? {
   // 先把毫秒分隔符统一成句点，省得分两套逻辑
   let normalized = raw.trim().to_owned().replace_all(old=",", new=".")
@@ -66,10 +85,13 @@ pub fn parse_timestamp(raw : String) -> Int? {
       digits_to_int(millis_text),
     ) {
     (Some(h), Some(m), Some(s), Some(ms)) =>
-      if m < 60 && s < 60 {
-        Some(h * 3600000 + m * 60000 + s * 1000 + ms)
-      } else {
+      if m >= 60 || s >= 60 {
         None
+      } else if h > 596 {
+        // 596 小时 × 3600000 已经接近 Int 上界，再大就会回绕
+        None
+      } else {
+        Some(h * 3600000 + m * 60000 + s * 1000 + ms)
       }
     _ => None
   }
@@ -104,7 +126,6 @@ pub fn format_timestamp(ms : Int) -> String {
 }
 
 ///|
-/// 下面这些测试现在全是红的，实现完上面两个函数之后应该全绿。
 /// `test { }` 块和源代码在同一个包里，可以直接访问包内私有成员。
 test "parse_timestamp 解析正常输入" {
   debug_inspect(parse_timestamp("00:01:23,456"), content="Some(83456)")
@@ -138,6 +159,27 @@ test "format_timestamp 毫秒补足三位" {
 ///|
 test "format_timestamp 负数按零处理" {
   inspect(format_timestamp(-1), content="00:00:00,000")
+}
+
+///|
+/// 溢出必须被拒绝，不能被回绕成一个"看起来正常"的小数字。
+/// 这里每条都是实测过的回绕值 —— 修之前 `2147483647` 读成 `-1`、
+/// 十四位数读成 `1569324`，两个都长着合法数字的样子。
+test "digits_to_int 超出 Int 范围返回 None" {
+  debug_inspect(digits_to_int("2147483647"), content="Some(2147483647)")
+  debug_inspect(digits_to_int("2147483648"), content="None")
+  debug_inspect(digits_to_int("99999999999999"), content="None")
+  debug_inspect(digits_to_int("99999999999999999999999999"), content="None")
+}
+
+///|
+/// 毫秒段固定三位，小时段才是能撑破范围的那一段。
+test "parse_timestamp 超出范围返回 None" {
+  // 596 小时是上界，597 就溢出
+  debug_inspect(parse_timestamp("596:00:00,000"), content="Some(2145600000)")
+  debug_inspect(parse_timestamp("597:00:00,000"), content="None")
+  debug_inspect(parse_timestamp("999999999:00:00,000"), content="None")
+  debug_inspect(parse_timestamp("99999999999999:00:00,000"), content="None")
 }
 
 ///|
