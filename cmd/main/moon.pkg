@@ -1,6 +1,7 @@
 import {
   "haiou/moonbit-subtitle" @lib,
   "moonbitlang/core/argparse",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/env",
   "moonbitlang/x/fs",
   "moonbitlang/x/sys",

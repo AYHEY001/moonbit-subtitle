@@ -9,3 +9,6 @@ _build/
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# cmd/main 的测试要真的读写文件，会在项目根下开这个目录
+_test_tmp/

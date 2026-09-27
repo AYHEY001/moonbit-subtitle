@@ -110,14 +110,33 @@ fn same_path(a : String, b : String) -> Bool {
 }
 
 ///|
-/// 读文件。编码显式写出来，让"读进来乱码"这类问题有一个明确的说法，
-/// 而不是靠平台默认值碰运气。
+/// 读文件：先取原始字节，再用**严格** UTF-8 解码。
 ///
-/// 注意这里写的是 `utf8` 而不是 `utf-8`：`moonbitlang/x/fs` 只认前者，
-/// 写成 `utf-8` 会直接抛 `Unsupported encoding`。
+/// 不能写成 `read_file_to_string(path, encoding="utf8")` —— 那个接口对非法
+/// UTF-8 字节不报错。实测一个 GBK 文件（正文 `304 343 272 303 312 300 275 347`）
+/// 读进来再写出去，字节被改写成 `304 243 332 203 312 200 335 247`，
+/// **退出码照常是 0**。数据在读取这一步就已经损坏，而调用方看不到任何异常，
+/// 只会以为文件处理好了。
+///
+/// GBK 的老字幕很常见，撞上这条的概率不低，所以宁可明确拒绝：
+/// 说清楚"这个文件不是 UTF-8"，让用户先转码，而不是产出乱码。
+///
+/// `decode` 只 raise `Malformed` 一种错误，不用 `decode_lossy` ——
+/// 那个会把坏字节换成替换字符继续走下去，正是要避免的静默行为。
 fn read_text(path : String) -> Result[String, String] {
-  Ok(@fs.read_file_to_string(path, encoding="utf8")) catch {
+  let raw : Result[Bytes, String] = Ok(@fs.read_file_to_bytes(path)) catch {
     @fs.IOError(msg) => Err("读不了 " + path + "：" + msg)
+  }
+  let bytes = match raw {
+    Ok(b) => b
+    Err(msg) => return Err(msg)
+  }
+  Ok(@utf8.decode(bytes)) catch {
+    @utf8.Malformed(_) =>
+      Err(
+        path +
+        "：不是合法的 UTF-8 文件。GBK 等编码的字幕请先转成 UTF-8（例如 iconv -f GBK -t UTF-8）",
+      )
   }
 }
 
