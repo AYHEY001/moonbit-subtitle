@@ -101,7 +101,7 @@ pub fn Subtitle::strip_markup(self : Subtitle) -> Subtitle {
       settings: c.settings,
     })
   }
-  { cues: out, extras: self.extras, }
+  { cues: out, extras: self.extras, header: self.header, }
 }
 
 ///|

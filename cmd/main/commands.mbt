@@ -274,7 +274,26 @@ fn describe_extras(extras : Array[@lib.ExtraBlock]) -> String {
 }
 
 ///|
-/// 看信息：条数、总时长、首末时间，WebVTT 里带上非字幕块的统计。
+/// 把 WebVTT 文件头里的元数据行拼成 `Kind: captions、Language: zh` 这样的说明。
+///
+/// 签名行本身（`WEBVTT`，可能带一句说明文字）跳过 —— 它每份 WebVTT 都有，
+/// 报出来只是噪音。没有元数据行就返回空串，SRT 和普通 WebVTT 都走这一支。
+fn describe_header(header : String) -> String {
+  let lines = header.split("\n").to_array()
+  let parts : Array[String] = []
+  let mut i = 1
+  while i < lines.length() {
+    let line = lines[i].trim()
+    if !line.is_empty() {
+      parts.push(line.to_owned())
+    }
+    i = i + 1
+  }
+  parts.join("、")
+}
+
+///|
+/// 看信息：条数、总时长、首末时间，WebVTT 里带上非字幕块与文件头的统计。
 fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
   let file = match need_value(sub, "file") {
     Ok(v) => v
@@ -287,12 +306,15 @@ fn cmd_info(sub : @argparse.Matches) -> Result[Output, String] {
   let cues = loaded.subtitle.cues
   let (min_start, max_end) = span_of(cues)
   let extras = describe_extras(loaded.subtitle.extras)
+  let header = describe_header(loaded.subtitle.header)
   let text = "文件：" +
     file +
     "\n" +
     "格式：" +
     (if loaded.format == "vtt" { "WebVTT" } else { "SRT" }) +
     "\n" +
+    // 同"非字幕块"一样，只在真有元数据行时才出现
+    (if header == "" { "" } else { "文件头：" + header + "\n" }) +
     "条数：" +
     cues.length().to_string() +
     "\n" +

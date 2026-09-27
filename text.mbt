@@ -89,6 +89,20 @@ fn tail_from(items : Array[StringView], start : Int) -> Array[StringView] {
 }
 
 ///|
+/// 取从头开始、到 `end` 之前的那一段。
+/// 与 `tail_from` 配对：WebVTT 的文件头是"第一条时间行之前的那些行"，
+/// 正好要的是前缀而不是后缀。
+fn head_until(items : Array[StringView], end : Int) -> Array[StringView] {
+  let out : Array[StringView] = []
+  let mut i = 0
+  while i < end && i < items.length() {
+    out.push(items[i])
+    i = i + 1
+  }
+  out
+}
+
+///|
 /// 取第一个词。
 /// 时间后面有时会跟着别的东西 —— SRT 的排版坐标 `X1:100 X2:500`，
 /// WebVTT 的 `align:start position:10%` —— 真正的结束时间只是第一个词。

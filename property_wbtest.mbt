@@ -10,12 +10,12 @@
 /// 能构造 `Cue`。黑盒测试文件（`*_test.mbt`）会被编成独立的包，拿不到包内类型。
 
 ///|
-/// 两条字幕的条数、时间、正文、标识、排版设置是否完全一致。
+/// 两条字幕的条数、文件头、时间、正文、标识、排版设置是否完全一致。
 ///
 /// `Cue` 没有 derive `Eq`：时间合法性由解析函数把关，多一套相等语义没有用。
 /// 测试里手动比一遍反而更清楚在比什么。
 fn same_subtitle(a : Subtitle, b : Subtitle) -> Bool {
-  if a.cues.length() != b.cues.length() {
+  if a.cues.length() != b.cues.length() || a.header != b.header {
     false
   } else {
     let mut ok = true
@@ -177,6 +177,30 @@ fn subtitle_with_extras_of(seed_values : Array[Int]) -> Subtitle {
 }
 
 ///|
+/// 带 WebVTT 文件头的一份字幕。
+///
+/// 文件头整块存原文，所以这里也整块给：签名行后面跟两行元数据行，
+/// 正是丢过信息的那种形状。行内不能出现空行 —— 空行会把头切成两块。
+fn subtitle_with_header_of(seed_values : Array[Int]) -> Subtitle {
+  let cues : Array[Cue] = []
+  let mut i = 0
+  while i < seed_values.length() {
+    let start = positive(seed_values[i] % 3600000)
+    let span = positive(seed_values[i] % 4000)
+    cues.push({
+      index: i + 1,
+      start_ms: start,
+      end_ms: start + span,
+      text: "行" + (i + 1).to_string(),
+      id: "",
+      settings: "",
+    })
+    i = i + 1
+  }
+  { cues, extras: [], header: "WEBVTT\nKind: captions\nLanguage: zh", }
+}
+
+///|
 /// 两块非字幕内容是否一致：类型、原文、落点都要对上。
 fn same_extras(a : Subtitle, b : Subtitle) -> Bool {
   if a.extras.length() != b.extras.length() {
@@ -300,6 +324,21 @@ test "非字幕块渲染再解析不丢" {
     },
     count=200,
     seed=20260928,
+  )
+}
+
+///|
+test "带文件头的 WebVTT 渲染再解析不丢" {
+  @quickcheck.check(
+    (seed_values : Array[Int]) => {
+      let s = subtitle_with_header_of(seed_values)
+      match parse_vtt(s.render_vtt()) {
+        Ok(back) => same_subtitle(s, back)
+        Err(_) => false
+      }
+    },
+    count=200,
+    seed=20260931,
   )
 }
 

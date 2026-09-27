@@ -53,6 +53,21 @@ pub struct ExtraBlock {
 pub struct Subtitle {
   cues : Array[Cue]
   extras : Array[ExtraBlock]
+  /// WebVTT 文件头整块原文：首行是 `WEBVTT` 签名行（可以带说明文字，
+  /// 形如 `WEBVTT - 中文字幕`），后面跟若干元数据行（`Kind: captions`、
+  /// `Language: zh` 这类）。多行用换行连接，不含首尾空行。
+  ///
+  /// 空串表示"这个头没有多余的东西"，渲染时写成最小头 `WEBVTT`。
+  /// **光一个 `WEBVTT` 行也归到这一种** —— 否则同一份文件会有两种等价表示，
+  /// 往返比较和渲染判断都得各多判一次。
+  ///
+  /// 为什么整块存原文而不是解析成键值对：跟 `settings` 同一个理由 ——
+  /// 遇到没见过的键不会丢东西，写回时也就一定是原样。
+  /// 元数据行丢了不只是"少了几行注释"：`Language` 没了播放器挑不了语言轨，
+  /// `Kind` 没了就分不出辅助字幕和普通字幕。
+  ///
+  /// SRT 没有文件头，解析出来永远是空串。
+  header : String
 }
 
 ///|
@@ -60,8 +75,9 @@ pub struct Subtitle {
 /// 所以必须留这么一个公开的入口，否则这个库对外就不可用了。
 ///
 /// 不带 `extras`：非字幕块要么来自解析，要么由 `Subtitle::with_extras` 指定。
+/// 文件头同样是空的，渲染成 WebVTT 时写最小头。
 pub fn Subtitle::from_cues(cues : Array[Cue]) -> Subtitle {
-  { cues, extras: [], }
+  { cues, extras: [], header: "", }
 }
 
 ///|
@@ -71,7 +87,7 @@ pub fn Subtitle::with_extras(
   cues : Array[Cue],
   extras : Array[ExtraBlock],
 ) -> Subtitle {
-  { cues, extras, }
+  { cues, extras, header: "", }
 }
 
 ///|
@@ -134,7 +150,7 @@ pub fn Subtitle::shift(self : Subtitle, offset_ms : Int) -> Subtitle {
       settings: c.settings,
     })
   }
-  { cues: out, extras: self.extras, }
+  { cues: out, extras: self.extras, header: self.header, }
 }
 
 ///|
@@ -170,7 +186,7 @@ pub fn Subtitle::scale(self : Subtitle, speed : Double) -> Subtitle {
         settings: c.settings,
       })
     }
-    { cues: out, extras: self.extras, }
+    { cues: out, extras: self.extras, header: self.header, }
   }
 }
 
@@ -212,7 +228,7 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
       None => out.push(c)
     }
   }
-  { cues: out, extras: self.extras, }
+  { cues: out, extras: self.extras, header: self.header, }
 }
 
 ///|
@@ -253,7 +269,7 @@ pub fn Subtitle::normalize(self : Subtitle) -> Subtitle {
     })
     index = index + 1
   }
-  { cues: out, extras: self.extras, }
+  { cues: out, extras: self.extras, header: self.header, }
 }
 
 ///|

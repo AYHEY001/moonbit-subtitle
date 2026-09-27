@@ -104,6 +104,33 @@ test "非字幕块" {
 }
 ```
 
+## 文件头
+
+WebVTT 签名行后面的元数据行整块收进 `header`，写回时紧贴签名行 ——
+中间隔一个空行的话，它们会被当成一个没有时间行的正文块，再解析就判坏了。
+只写一个 `WEBVTT` 行的头等同于"没有文件头"，存成空串。
+
+```mbt check
+///|
+test "文件头" {
+  let vtt = "WEBVTT\nKind: captions\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let subtitle = match @moonbit-subtitle.parse_vtt(vtt) {
+    Ok(s) => s
+    Err(_) => panic()
+  }
+  // 整块原文：签名行和元数据行都在里面
+  inspect(subtitle.header, content="WEBVTT\nKind: captions\nLanguage: zh")
+  inspect(subtitle.render_vtt(), content=vtt)
+  // SRT 里没有文件头，解析出来是空串，渲染成 WebVTT 时补最小头
+  let from_srt = match
+    @moonbit-subtitle.parse_srt("1\n00:00:01,000 --> 00:00:04,000\n第一行\n") {
+    Ok(s) => s
+    Err(_) => panic()
+  }
+  inspect(from_srt.header, content="")
+}
+```
+
 ## 时间量解析
 
 命令行里的平移量支持几种写法，也可以在自己代码里直接用。

@@ -16,6 +16,11 @@
 /// 它们不显示，但丢了会改变文件含义，所以按原文保存。转成 SRT 时会掉 ——
 /// 同样是因为 SRT 里没有地方放。
 ///
+/// 文件头（签名行连同后面的 `Kind: captions` / `Language: zh` 这类元数据行）
+/// 整块收进 `Subtitle::header`，渲染时原样写回。它跟 `extras` 分开存，
+/// 因为位置规则不一样：文件头必须紧贴 `WEBVTT` 行，`extras` 则各自独占一块。
+/// 只写一个 `WEBVTT` 行的头不记 —— 那等于没有多余信息，存成空串。
+///
 /// 正文里的 `<b>` `<c.classname>` 这类标记按原样保留。WebVTT 的标记在 SRT 里
 /// 同样被播放器识别，默认洗掉反而丢信息。需要纯文本时显式调 `Subtitle::strip_markup`。
 
@@ -47,6 +52,16 @@ fn vtt_special_kind(line : StringView) -> String {
 }
 
 ///|
+/// 文件头是不是"光一个 `WEBVTT` 签名行"（允许首尾空白）。
+///
+/// 这种头和"没有文件头"是一回事：渲染时两种情况都写最小头 `WEBVTT`。
+/// 如果解析时前者存成 `"WEBVTT"`、后者存成空串，同一份文件就有了两种表示 ——
+/// 往返比较要判、渲染要判，两处都得记得多这一个分支。
+fn is_bare_vtt_header(header : String) -> Bool {
+  header.trim().to_owned() == "WEBVTT"
+}
+
+///|
 /// 取这一块的 cue 标识：紧跟时间行前面那一行。
 ///
 /// 规范里一个 cue 最多一个标识，所以只认紧邻时间行的那一行。
@@ -74,16 +89,22 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
   let blocks = split_blocks(lines)
   let cues : Array[Cue] = []
   let extras : Array[ExtraBlock] = []
+  let mut header = ""
   let mut block_no = 0
   for block in blocks {
     block_no = block_no + 1
     let mut content = block
     if block_no == 1 {
       // 第一块是文件头：WEBVTT 行，加上它后面可能有的元数据行。
-      // 有些文件头后面不留空行、直接跟第一条 cue，所以只砍到第一个时间行之前。
+      // 有些文件头后面不留空行、直接跟第一条 cue，所以只裁到第一个时间行之前。
       let mut head = 0
       while head < block.length() && !is_time_line(block[head]) {
         head = head + 1
+      }
+      let raw = join_body(head_until(block, head), 0)
+      // 光一个签名行不记，统一成空串 —— 见 `is_bare_vtt_header`
+      if !is_bare_vtt_header(raw) {
+        header = raw
       }
       if head >= block.length() {
         continue
@@ -123,7 +144,7 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
       Err(msg) => return Err("第 " + block_no.to_string() + " 块：" + msg)
     }
   }
-  Ok(Subtitle::with_extras(cues, extras))
+  Ok({ cues, extras, header, })
 }
 
 ///|
@@ -167,6 +188,11 @@ fn push_extras_at(
 /// `extras` 里那些 `NOTE` / `STYLE` / `REGION` 块按 `before_pos` 插回原位：
 /// 插在第几条 cue 之前就是第几条之前，越界的排在末尾。
 /// 文件里本来没有这类块时，渲染结果和前几版完全一样。
+///
+/// 文件头按 `header` 的原文写回。它必须紧贴 `WEBVTT` 行（中间不能空行）——
+/// 隔一个空行的话，那些元数据行会被当成一个正文块，里面没有时间行，
+/// 整块在解析时被判为坏块。所以它不走 `extras` 那套"块之间空行分隔"的逻辑，
+/// 单独在前面拼上去。`header` 为空时写最小头 `WEBVTT`。
 pub fn Subtitle::render_vtt(self : Subtitle) -> String {
   // 先把每个块的落点归一：负数当 0，超过 cue 总数的当末尾。
   // 不归一的话，`before_pos` 越界的块两个循环都轮不到，会凭空消失。
@@ -203,11 +229,13 @@ pub fn Subtitle::render_vtt(self : Subtitle) -> String {
     cursor = cursor + 1
     push_extras_at(parts, self.extras, at, cursor)
   }
+  // 文件头按原文写回；没有额外信息时写最小头
+  let head = if self.header.is_empty() { "WEBVTT" } else { self.header }
   // 只剩头也是合法的 WebVTT（空字幕文件），别输出成空串
   if parts.length() == 0 {
-    "WEBVTT\n"
+    head + "\n"
   } else {
-    "WEBVTT\n\n" + parts.join("\n\n") + "\n"
+    head + "\n\n" + parts.join("\n\n") + "\n"
   }
 }
 
@@ -648,13 +676,105 @@ test "parse_vtt 接受头之后不留空行的文件" {
 }
 
 ///|
-test "parse_vtt 跳过文件头里的元数据" {
+test "parse_vtt 收下文件头里的元数据" {
   let text = "WEBVTT\nKind: captions\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
   let s = match parse_vtt(text) {
     Ok(s) => s
     Err(_) => Subtitle::from_cues([])
   }
   inspect(s.cues.length(), content="1")
+  inspect(s.header, content="WEBVTT\nKind: captions\nLanguage: zh")
+  // 元数据行必须紧贴签名行写回。中间隔一个空行的话，它们会被当成一个
+  // 没有时间行的正文块，再解析时整块判坏。
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "文件头只有签名行时不记" {
+  let text = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // 光一个 WEBVTT 行等于没有多余信息，存成空串而不是 "WEBVTT"，
+  // 否则同一份文件会有两种表示
+  inspect(s.header, content="")
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "签名行后面的说明文字也保留" {
+  let text = "WEBVTT - 中文字幕\n\n00:00:01.000 --> 00:00:04.000\n第一行\n"
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.header, content="WEBVTT - 中文字幕")
+  inspect(s.render_vtt(), content=text)
+}
+
+///|
+test "文件头后面直接跟 cue 时元数据也收得住" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\nLanguage: zh\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.header, content="WEBVTT\nLanguage: zh")
+  inspect(s.cues.length(), content="1")
+  // 渲染时会补上空行 —— 规范要求头与第一条 cue 之间空一行，输入那种
+  // 连着的写法本来就不合规范，这里只是把它规整回来
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+  )
+}
+
+///|
+test "文件头跟着 shift 与 strip_markup 走" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n<b>第一行</b>\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(Subtitle::shift(s, 500).header, content="WEBVTT\nLanguage: zh")
+  // 文件头里没有正文标记，剥标记不该碰它
+  inspect(Subtitle::strip_markup(s).header, content="WEBVTT\nLanguage: zh")
+  inspect(Subtitle::normalize(s).header, content="WEBVTT\nLanguage: zh")
+}
+
+///|
+test "SRT 转过来的字幕没有文件头" {
+  let s = match parse_srt("1\n00:00:01,000 --> 00:00:04,000\n第一行\n") {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // SRT 里没有文件头，解析出来就是空的，渲染成 WebVTT 时补最小头
+  inspect(s.header, content="")
+  inspect(
+    s.render_vtt(),
+    content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+  )
+}
+
+///|
+test "文件头在转成 SRT 时丢掉" {
+  let s = match
+    parse_vtt(
+      "WEBVTT\nLanguage: zh\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
+    ) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  // SRT 里没有放文件头的地方 —— 格式限制，不是实现漏做
+  inspect(
+    s.render_srt(),
+    content="1\n00:00:01,000 --> 00:00:04,000\n第一行\n",
+  )
 }
 
 ///|
