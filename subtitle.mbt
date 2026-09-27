@@ -191,17 +191,70 @@ pub fn Subtitle::scale(self : Subtitle, speed : Double) -> Subtitle {
 }
 
 ///|
+/// 把两条 cue 的正文合成一条：空的那条不参与连接。
+///
+/// 直接写 `a + "\n" + b` 的话，某条正文为空时结果会带前导换行，
+/// 渲染出来块内就多一个空行 —— 而空行在 SRT / WebVTT 里都是**块分隔符**，
+/// 那种文件自己解析不回来。空正文是合法输入（只有序号行和时间行的块），
+/// 所以这条路径真的会被走到，不是理论情况。
+fn join_text(a : String, b : String) -> String {
+  if a.is_empty() {
+    b
+  } else if b.is_empty() {
+    a
+  } else {
+    a + "\n" + b
+  }
+}
+
+///|
+/// 按开始时间排序，开始时间相同的保持原有先后。
+///
+/// 不能直接用 `Array::sort_by`：那个是**不稳定**排序，比较器返回 0 的并列元素
+/// 顺序不保证保留，实测会乱成 `行16 行14 行15 行11 …`。
+/// 核心库的 `stable_sort` 只挂在 `MutArrayView` / `FixedArray` 上，
+/// 要求元素自己实现 `Compare`，`Cue` 不该为了排序去实现它。
+///
+/// 办法是把原位置并进比较键：`(开始时间, 原下标)` 是全序，没有并列，
+/// 于是排序算法稳不稳都不影响结果。
+fn stable_sort_by_start(cues : Array[Cue]) -> Array[Cue] {
+  let indexed : Array[(Cue, Int)] = []
+  let mut i = 0
+  while i < cues.length() {
+    indexed.push((cues[i], i))
+    i = i + 1
+  }
+  indexed.sort_by(fn(a : (Cue, Int), b : (Cue, Int)) -> Int {
+    let by_start = compare_by_start(a.0, b.0)
+    if by_start != 0 {
+      by_start
+    } else if a.1 < b.1 {
+      -1
+    } else if a.1 > b.1 {
+      1
+    } else {
+      0
+    }
+  })
+  let out : Array[Cue] = []
+  for pair in indexed {
+    out.push(pair.0)
+  }
+  out
+}
+
+///|
 /// 合并相互重叠的 cue。
 /// 有些 SRT 里相邻字幕会重叠几十毫秒，一部分播放器会因此闪烁或者丢行。
 ///
 /// 合并规则：后一条的开始时间严格早于前一条的结束时间才算重叠，
 /// 首尾相接（`start == 上一条 end`）不算 —— 那种情况本来就该是两条。
-/// 文本用换行拼接，因为播放器会把 cue 里的换行照原样渲染成两行。
+/// 文本用换行拼接，因为播放器会把 cue 里的换行照原样渲染成两行；
+/// 正文为空的那条跳过连接，理由见 `join_text`。
 ///
-/// 输入不要求有序，内部会先按开始时间排一遍。
+/// 输入不要求有序，内部会先按开始时间排一遍（稳定排序，见 `stable_sort_by_start`）。
 pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
-  let sorted = self.cues.copy()
-  sorted.sort_by(compare_by_start)
+  let sorted = stable_sort_by_start(self.cues)
   let out : Array[Cue] = []
   for c in sorted {
     match out.last() {
@@ -215,7 +268,7 @@ pub fn Subtitle::merge_overlaps(self : Subtitle) -> Subtitle {
             } else {
               prev.end_ms
             },
-            text: prev.text + "\n" + c.text,
+            text: join_text(prev.text, c.text),
             // 两条并成一条，标识只能留一个。取先出现的那条：
             // 它才是"这次合并从哪儿开始"的那个锚点。排版设置同理 ——
             // 合并后是一条字幕，只能有一套位置。
@@ -253,9 +306,9 @@ fn compare_by_start(a : Cue, b : Cue) -> Int {
 ///
 /// 用的是稳定排序：开始时间相同的两条保持原始先后，
 /// 这样规范化只做它该做的事，不会顺手把别的顺序也改了。
+/// 稳定性靠 `stable_sort_by_start` 里的"原位置"比较键保证，不是靠排序算法本身。
 pub fn Subtitle::normalize(self : Subtitle) -> Subtitle {
-  let sorted = self.cues.copy()
-  sorted.sort_by(compare_by_start)
+  let sorted = stable_sort_by_start(self.cues)
   let out : Array[Cue] = []
   let mut index = 1
   for c in sorted {
@@ -593,4 +646,123 @@ test "merge_overlaps 内部先排序" {
   let r = Subtitle::merge_overlaps(s)
   inspect(r.cues.length(), content="1")
   inspect(r.cues[0].index, content="2")
+}
+
+///|
+/// 合并时正文用换行连接，但空的那条不该参与进去。
+///
+/// 直接写 `a + "\n" + b` 的话，某条正文为空就会多出前导（或中间）的空行，
+/// 渲染出来块内多一个空行 —— 而空行在两种格式里都是块分隔符，
+/// 那种文件自己解析不回来（见下面那条端到端测试）。
+test "merge_overlaps 不在正文里造出空行" {
+  let s = Subtitle::from_cues([
+    { index: 1, start_ms: 0, end_ms: 5000, text: "", id: "", settings: "", },
+    {
+      index: 2,
+      start_ms: 1000,
+      end_ms: 2000,
+      text: "重合",
+      id: "",
+      settings: "",
+    },
+  ])
+  let r = Subtitle::merge_overlaps(s)
+  inspect(r.cues.length(), content="1")
+  // 修之前这里是 "\n重合"
+  inspect(r.cues[0].text, content="重合")
+}
+
+///|
+/// 端到端：空正文的 cue 参与合并之后，渲染出来的文件必须还能被自己解析。
+///
+/// 这条是"产出非法文件"的直接回归 —— 修之前渲染出的第二块会变成
+/// `1\n00:00:01,000 --> 00:00:05,000\n\n重合`（块内空了一行），
+/// 再喂回 `parse_srt` 报"第 2 块：第一行不是序号行"，
+/// 而 `normalize` 自己的退出码还是 0，用户看不到任何异常。
+test "合并空正文之后渲染的文件还能解析回来" {
+  let text = "1\n00:00:01,000 --> 00:00:05,000\n\n2\n00:00:02,000 --> 00:00:03,000\n重合\n"
+  let parsed = match parse_srt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  let rendered = Subtitle::normalize(
+    Subtitle::merge_overlaps(Subtitle::normalize(parsed)),
+  ).render_srt()
+  let ok = match parse_srt(rendered) {
+    Ok(_) => true
+    Err(_) => false
+  }
+  inspect(ok, content="true")
+}
+
+///|
+/// 造 20 条测试 cue：前 10 条开始时间递增（1000..10000），后 10 条都取 1000。
+/// 正文是 `行1`..`行20`，顺序一眼就能读出来。
+///
+/// 形状是专门为"暴露不稳定排序"挑的：数量超过 16（小数组内部走插入排序，
+/// 看着像稳定的，测不出问题），而且输入不是已排序的样子（一堆 1000 排在大的后面），
+/// 会真的进到排序的划分阶段。
+fn cues_with_tied_starts() -> Array[Cue] {
+  let cues : Array[Cue] = []
+  let mut i = 1
+  while i <= 10 {
+    cues.push({
+      index: i,
+      start_ms: i * 1000,
+      end_ms: i * 1000,
+      text: "行" + i.to_string(),
+      id: "",
+      settings: "",
+    })
+    i = i + 1
+  }
+  let mut j = 11
+  while j <= 20 {
+    cues.push({
+      index: j,
+      start_ms: 1000,
+      end_ms: 1000,
+      text: "行" + j.to_string(),
+      id: "",
+      settings: "",
+    })
+    j = j + 1
+  }
+  cues
+}
+
+///|
+/// 开始时间相同的 cue 要保持输入里的先后。
+///
+/// `Array::sort_by` 是不稳定排序：比较器返回 0 的并列元素，顺序不保证保留。
+/// 修之前这里会乱成 `行16 行14 行15 行11 行20 …`，而 `normalize` 的注释
+/// 一直承诺"开始时间相同的两条保持原始先后" —— 文档和实现对不上。
+test "normalize 对相同开始时间保持原有先后" {
+  let r = Subtitle::normalize(Subtitle::from_cues(cues_with_tied_starts()))
+  // start == 1000 的那一组，按输入顺序是 行1、行11…行20（行1 的 start 也是 1000）
+  let expected : Array[String] = [
+    "行1", "行11", "行12", "行13", "行14", "行15", "行16", "行17", "行18",
+    "行19", "行20",
+  ]
+  let mut k = 0
+  let mut ok = true
+  while k < expected.length() {
+    if r.cues[k].text != expected[k] {
+      ok = false
+    }
+    k = k + 1
+  }
+  inspect(ok, content="true")
+}
+
+///|
+/// `merge_overlaps` 内部同样要排序，所以也要稳定。
+/// 这里的 cue 都是零长度（start == end），一条都不会被合并，20 条原样留下来，
+/// 正好能单看排序结果。
+test "merge_overlaps 对相同开始时间保持原有先后" {
+  let r = Subtitle::merge_overlaps(Subtitle::from_cues(cues_with_tied_starts()))
+  inspect(r.cues.length(), content="20")
+  inspect(r.cues[0].text, content="行1")
+  inspect(r.cues[1].text, content="行11")
+  inspect(r.cues[2].text, content="行12")
 }

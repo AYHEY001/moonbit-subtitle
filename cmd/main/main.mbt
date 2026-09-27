@@ -24,6 +24,11 @@ fn cli_args() -> Array[String] {
 
 ///|
 /// 命令与参数定义。
+///
+/// 每个位置参数都写了 `num_args=ValueRange::single()`。不写的话 argparse 默认
+/// 它是"最多一个值的可选参数"（`0..=1`），缺了不报错 —— 错误只能由
+/// `commands.mbt` 的 `need_value` 兜底，而那里走的是"文件处理失败"的退出码 1，
+/// 跟 README 约定的"参数写错用 2"对不上。交给 argparse 拦，用法错误的退出码就统一了。
 fn build_command() -> @argparse.Command {
   @argparse.Command(
     "moonbit-subtitle",
@@ -33,19 +38,30 @@ fn build_command() -> @argparse.Command {
       @argparse.Command(
         "info",
         about="打印条数、总时长与首末时间",
-        positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
+        positionals=[
+          @argparse.PositionArg(
+            "file",
+            about="输入字幕文件",
+            num_args=@argparse.ValueRange::single(),
+          ),
+        ],
       ),
       @argparse.Command(
         "shift",
         about="整体平移时间轴，例：shift a.srt -1.5s",
         positionals=[
-          @argparse.PositionArg("file", about="输入字幕文件"),
+          @argparse.PositionArg(
+            "file",
+            about="输入字幕文件",
+            num_args=@argparse.ValueRange::single(),
+          ),
           // allow_hyphen_values：平移量以减号开头（-500），
           // 不打开这个开关，argparse 会把它当成未知选项直接报错
           @argparse.PositionArg(
             "offset",
             about="平移量：-500 是毫秒，也可以写 1.5s / 2m",
             allow_hyphen_values=true,
+            num_args=@argparse.ValueRange::single(),
           ),
         ],
         options=[
@@ -60,7 +76,13 @@ fn build_command() -> @argparse.Command {
       @argparse.Command(
         "normalize",
         about="按开始时间排序、序号重排、合并重叠",
-        positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
+        positionals=[
+          @argparse.PositionArg(
+            "file",
+            about="输入字幕文件",
+            num_args=@argparse.ValueRange::single(),
+          ),
+        ],
         options=[
           @argparse.OptionArg(
             "output",
@@ -73,7 +95,13 @@ fn build_command() -> @argparse.Command {
       @argparse.Command(
         "convert",
         about="格式转换，例：convert a.srt --to vtt",
-        positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
+        positionals=[
+          @argparse.PositionArg(
+            "file",
+            about="输入字幕文件",
+            num_args=@argparse.ValueRange::single(),
+          ),
+        ],
         options=[
           @argparse.OptionArg(
             "to",
@@ -92,7 +120,13 @@ fn build_command() -> @argparse.Command {
       @argparse.Command(
         "strip",
         about="剥掉正文里的排版标记，例：strip a.vtt",
-        positionals=[@argparse.PositionArg("file", about="输入字幕文件")],
+        positionals=[
+          @argparse.PositionArg(
+            "file",
+            about="输入字幕文件",
+            num_args=@argparse.ValueRange::single(),
+          ),
+        ],
         options=[
           @argparse.OptionArg(
             "output",

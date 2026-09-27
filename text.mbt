@@ -103,15 +103,44 @@ fn head_until(items : Array[StringView], end : Int) -> Array[StringView] {
 }
 
 ///|
+/// 按空白切词，丢掉空段。
+///
+/// 空格和制表符都算分隔符 —— WebVTT 规范把两者当作等价（`NOTE\t注释`、
+/// `00:00:04.000\talign:start` 都是合法写法）。只按空格切的话制表符会粘在词里，
+/// 后面的判断就全对不上了。
+///
+/// 不写 `split(" ")` 再各自过滤空串：那样每个调用点都得重复一遍过滤，
+/// 漏一处就是"连续两个空格"和"空词"混进结果里。
+fn split_whitespace(text : StringView) -> Array[String] {
+  let out : Array[String] = []
+  let mut current = ""
+  for c in text.iter() {
+    if c == ' ' || c == '\t' {
+      if !current.is_empty() {
+        out.push(current)
+        current = ""
+      }
+    } else {
+      current = current + c.to_string()
+    }
+  }
+  if !current.is_empty() {
+    out.push(current)
+  }
+  out
+}
+
+///|
 /// 取第一个词。
 /// 时间后面有时会跟着别的东西 —— SRT 的排版坐标 `X1:100 X2:500`，
 /// WebVTT 的 `align:start position:10%` —— 真正的结束时间只是第一个词。
+/// 分隔符是空格还是制表符都能认，理由见 `split_whitespace`。
 fn first_token(part : StringView) -> String {
-  let tokens = part.trim().split(" ").to_array()
+  let tokens = split_whitespace(part)
   if tokens.length() == 0 {
     ""
   } else {
-    tokens[0].to_owned()
+    tokens[0]
   }
 }
 
@@ -120,21 +149,20 @@ fn first_token(part : StringView) -> String {
 ///
 /// 时间行右侧的排版设置靠这个抓出来：`00:00:04,000 X1:100 X2:500`
 /// 拿掉时间戳之后就是 `X1:100 X2:500`。
-/// 中间连续的空白压成一个空格 —— 设置项之间本来也只该有一个空格。
+/// 分隔符认空格和制表符；中间连续的空白压成一个空格 ——
+/// 设置项之间本来也只该有一个空格，压平之后写回的时间行才干净。
 fn rest_after_first_token(part : StringView) -> String {
-  let tokens = part.trim().split(" ").to_array()
+  let tokens = split_whitespace(part)
   if tokens.length() <= 1 {
     return ""
   }
   let out : Array[String] = []
   let mut i = 1
   while i < tokens.length() {
-    if !tokens[i].trim().is_empty() {
-      out.push(tokens[i].to_owned())
-    }
+    out.push(tokens[i])
     i = i + 1
   }
-  out.join(" ").trim().to_owned()
+  out.join(" ")
 }
 
 ///|
@@ -190,7 +218,7 @@ fn parse_time_range(
 /// 没有冒号的片段不算设置项，跳过 —— 时间行后面偶尔会跟一些自由文本。
 fn setting_keys(settings : String) -> Array[String] {
   let keys : Array[String] = []
-  for token in settings.split(" ").to_array() {
+  for token in split_whitespace(settings) {
     let parts = token.split(":").to_array()
     if parts.length() >= 2 && !parts[0].trim().is_empty() {
       keys.push(parts[0].trim().to_owned())
@@ -305,4 +333,27 @@ test "is_srt_settings 认坐标的四个键" {
   inspect(is_srt_settings("X1:100 Y1:20 X2:500 Y2:600"), content="true")
   inspect(is_srt_settings("align:start"), content="false")
   inspect(is_srt_settings(""), content="false")
+}
+
+///|
+/// 制表符和空格一样是分隔符 —— WebVTT 规范把两者当等价。
+/// 只按空格切的话制表符会粘在词里：`NOTE\t注释` 整串算一个词，认不出注释块；
+/// `时间\talign:start` 里 `align:start` 会被当成结束时间的一部分。
+test "first_token 认制表符当分隔符" {
+  inspect(first_token("00:00:04.000\talign:start"), content="00:00:04.000")
+  inspect(first_token("NOTE\t注释"), content="NOTE")
+  inspect(first_token(" \t \t "), content="")
+}
+
+///|
+test "rest_after_first_token 认制表符当分隔符" {
+  inspect(
+    rest_after_first_token("00:00:04.000\talign:start"),
+    content="align:start",
+  )
+  // 空格和制表符混着来也要收干净，中间压成一个空格
+  inspect(
+    rest_after_first_token("00:00:04.000 \t X1:100\tX2:500"),
+    content="X1:100 X2:500",
+  )
 }

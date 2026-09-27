@@ -49,8 +49,7 @@ fn run(name : String, sub : @argparse.Matches) -> Unit {
 }
 
 ///|
-/// 取参数值。位置参数和选项在 argparse 里都存在 `values`，
-/// 键名就是声明时用的名字。
+/// 取参数值。
 fn value_of(matches : @argparse.Matches, name : String) -> String? {
   match matches.values.get(name) {
     Some(values) => if values.length() > 0 { Some(values[0]) } else { None }
@@ -59,8 +58,11 @@ fn value_of(matches : @argparse.Matches, name : String) -> String? {
 }
 
 ///|
-/// 取必填参数。argparse 只管选项标了 `required` 的情况，
-/// 位置参数缺了要自己拦。
+/// 取必填参数。
+///
+/// 位置参数在 `main.mbt` 里都声明了 `num_args=ValueRange::single()`，
+/// 缺了 argparse 自己就拦下来（退出码 2），正常走不到这里的 `Err` 分支。
+/// 留着是兜底：万一将来改声明时漏了，至少还报"缺少参数：xx"而不是别的错。
 fn need_value(
   matches : @argparse.Matches,
   name : String,

@@ -10,7 +10,7 @@ SRT 看着简单，实际从字幕组、剪辑软件、在线平台导出的文�
 - Windows 的 CRLF 换行
 - 序号跳号、乱序、重复
 - 相邻字幕时间重叠几十毫秒，部分播放器会闪烁或丢行
-- 时间行两侧多余空格，或者时间后面跟着排版坐标 `X1:100 X2:500`
+- 时间行两侧多余的空格或制表符，或者时间后面跟着排版坐标 `X1:100 X2:500`
 
 现成的字幕工具大多假设输入是干净的，遇到这些要么报错，要么静默丢字幕 ——
 后者更麻烦，往往到成片导出之后才发现少了几行。
@@ -31,7 +31,7 @@ SRT 看着简单，实际从字幕组、剪辑软件、在线平台导出的文�
 | `cmd/main` 命令行工具 | 完成 |
 | `property_wbtest.mbt` 属性测试 | 完成 |
 
-`moon test` 全部通过：148 项，其中 12 项是 quickcheck 属性测试，
+`moon test` 全部通过：156 项，其中 12 项是 quickcheck 属性测试，
 覆盖往返一致性与时间轴不变量（详见 [property_wbtest.mbt](property_wbtest.mbt)）。
 这个数字含 [README.mbt.md](README.mbt.md) 里那几个用法示例 —— 它们也被 `moon test` 真的跑一遍。
 另有 8 项在 `cmd/main` 里，测的是读文件的编码校验与 `info` 的展示逻辑。
@@ -75,6 +75,8 @@ $ moon run cmd/main -- info examples/messy.srt
 ```
 
 `normalize` 做三件事：按开始时间排序、合并重叠、序号重排成一到 n。
+排序是稳定的 —— 开始时间相同的两条保持原来的先后。合并时正文里不会多出空行，
+所以输出的文件总能被自己重新读进来。
 
 ```
 $ moon run cmd/main -- normalize examples/messy.srt
@@ -114,7 +116,7 @@ $ moon run cmd/main -- strip examples/marked.vtt
 WEBVTT
 
 intro
-00:00:01.000 --> 00:00:04.000
+00:00:01.000 --> 00:00:04.000 align:start
 欢迎收看今晚的节目
 
 speaker

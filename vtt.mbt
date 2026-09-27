@@ -844,3 +844,34 @@ test "SRT 可以转成 WebVTT" {
     content="WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n第一行\n",
   )
 }
+
+///|
+/// 制表符是合法的分隔符，不能把文件当成坏的拒绝掉。
+///
+/// 修之前 `NOTE\t注释` 被报成"第 2 块：找不到时间行" —— 注释块当成没时间行的坏字幕，
+/// 提示里完全看不出真正的原因是分隔符。`vtt_special_kind` 的注释一直写着
+/// "分隔符是空格还是制表符都能认出来"，但 `first_token` 只按空格切，两者对不上。
+test "parse_vtt 认制表符分隔的 NOTE" {
+  let text = "WEBVTT\n\nNOTE\t这里是注释\n\n00:00:01.000 --> 00:00:02.000\n第一行\n"
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.cues.length(), content="1")
+  inspect(s.extras.length(), content="1")
+  inspect(s.extras[0].kind, content="NOTE")
+}
+
+///|
+/// 时间行与设置之间用制表符分隔，同样是合法 WebVTT。
+/// 修之前整串 `00:00:04.000\talign:start` 被当成结束时间去解析，
+/// 报出来的错误是"结束时间无法解析"，指不到分隔符头上。
+test "parse_vtt 认制表符分隔的排版设置" {
+  let text = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\talign:start\n第一行\n"
+  let s = match parse_vtt(text) {
+    Ok(s) => s
+    Err(_) => Subtitle::from_cues([])
+  }
+  inspect(s.cues[0].end_ms, content="4000")
+  inspect(s.cues[0].settings, content="align:start")
+}
