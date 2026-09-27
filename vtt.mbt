@@ -65,8 +65,8 @@ fn is_bare_vtt_header(header : String) -> Bool {
 /// 取这一块的 cue 标识：紧跟时间行前面那一行。
 ///
 /// 规范里一个 cue 最多一个标识，所以只认紧邻时间行的那一行。
-/// 前面若还有别的行（`WEBVTT` 头之后没留空行的写法），那部分按文件头元数据处理 ——
-/// 这种写法本身就不符合规范，规范要求头与第一条 cue 之间空一行。
+/// 多出来的行在调用处就被挡下了（`parse_vtt` 里的 `time_at > 1`），
+/// 走到这里 `time_at` 只可能是 0 或者 1。
 fn cue_id_from(content : Array[StringView], time_at : Int) -> String {
   if time_at == 0 {
     ""
@@ -128,6 +128,18 @@ pub fn parse_vtt(input : String) -> Result[Subtitle, String] {
     }
     if time_at >= content.length() {
       return Err("第 " + block_no.to_string() + " 块：找不到时间行")
+    }
+    // 标识行最多一个。多出来的行以前是安静丢掉的 —— 转一圈出来只剩紧邻时间行
+    // 的那一行当标识，前面的行不见踪影，退出码还是 0。这种输入本身不符规范
+    // （一个 cue 只有一个标识行），宁可报错也不替用户挑一行留着。
+    if time_at > 1 {
+      return Err(
+        "第 " +
+        block_no.to_string() +
+        " 块：时间行前面有 " +
+        time_at.to_string() +
+        " 行，一条 cue 最多一个标识行",
+      )
     }
     match parse_time_range(content[time_at], parse_vtt_timestamp) {
       Ok(range) => {
@@ -793,6 +805,38 @@ test "parse_vtt 拒绝找不到时间行的块" {
     Err(_) => true
   }
   inspect(ok, content="true")
+}
+
+///|
+/// 时间行前面只允许一个标识行。
+///
+/// 多出来的行以前是**安静丢掉**的：`WEBVTT\n\n第一行\n第二行\n00:00:01.000 --> …\n正文`
+/// 转一圈出来只剩 `第二行` 当标识，`第一行` 不见了，退出码还是 0。
+/// 这种输入本来就不符合规范（一个 cue 最多一个标识），按项目一贯的做法明确报错，
+/// 而不是替用户决定丢掉哪一行。
+test "parse_vtt 拒绝时间行前面的多余行" {
+  let msg = match
+    parse_vtt(
+      "WEBVTT\n\n第一行\n第二行\n00:00:01.000 --> 00:00:02.000\n正文\n",
+    ) {
+    Ok(_) => "（没有报错）"
+    Err(m) => m
+  }
+  inspect(
+    msg,
+    content="第 2 块：时间行前面有 2 行，一条 cue 最多一个标识行",
+  )
+}
+
+///|
+/// 只有一个标识行时照旧解析 —— 上面那条报错不能把正常写法一起挡了。
+test "parse_vtt 仍然接受单个标识行" {
+  let id = match
+    parse_vtt("WEBVTT\n\n提示\n00:00:01.000 --> 00:00:02.000\n正文\n") {
+    Ok(s) => s.cues[0].id
+    Err(_) => "解析失败"
+  }
+  inspect(id, content="提示")
 }
 
 ///|

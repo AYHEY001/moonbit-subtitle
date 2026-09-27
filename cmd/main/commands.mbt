@@ -100,9 +100,38 @@ fn target_format(text : String) -> String? {
 }
 
 ///|
-/// 路径比较用的规范形式：Windows 上大小写不敏感，反斜杠和正斜杠两种写法都认。
+/// 路径比较用的规范形式。三层处理：
+///   - 反斜杠统一成正斜杠、大小写统一成小写（Windows 上大小写不敏感）
+///   - 去掉空段（`a//b`）与点段（`a/./b`）
+///   - `..` 退掉上一段；已经到根时丢掉，开头没有可退的就原样留着
+///
+/// 后两层不是"顺手美化"，是那个"输出不能覆盖输入"的保护能不能生效的前提。
+/// 实测 `-o x.vtt` 会被拦下，但 `-o ./x.vtt`、`-o dir//x.vtt`、`-o dir/../x.vtt`
+/// 指的都是同一个文件，绕过比较之后输入文件被原地覆盖掉，退出码 0。
+/// 折叠成同一串再比，这几种写法就都拦得住了。
 fn normalize_path(path : String) -> String {
-  path.replace_all(old="\\", new="/").to_lower()
+  let unified = path.replace_all(old="\\", new="/").to_lower()
+  let absolute = unified.has_prefix("/")
+  let kept : Array[String] = []
+  for seg in unified.split("/").to_array() {
+    if !seg.is_empty() && !seg.equal(".") {
+      if seg.equal("..") {
+        if kept.length() > 0 && !kept[kept.length() - 1].equal("..") {
+          kept.truncate(kept.length() - 1)
+        } else if !absolute {
+          kept.push(seg.to_owned())
+        }
+      } else {
+        kept.push(seg.to_owned())
+      }
+    }
+  }
+  let body = kept.join("/")
+  if absolute {
+    "/" + body
+  } else {
+    body
+  }
 }
 
 ///|
@@ -461,4 +490,34 @@ test "same_path 忽略大小写与斜杠方向" {
 ///|
 test "normalize_path 统一斜杠与大小写" {
   inspect(normalize_path("D:\\Sub\\A.SRT"), content="d:/sub/a.srt")
+}
+
+///|
+test "normalize_path 折叠空段与点段" {
+  inspect(normalize_path("./a/b.srt"), content="a/b.srt")
+  inspect(normalize_path("a//b.srt"), content="a/b.srt")
+  inspect(normalize_path("a/./b.srt"), content="a/b.srt")
+  inspect(normalize_path("a/b/"), content="a/b")
+  inspect(normalize_path(".\\a\\.\\b.srt"), content="a/b.srt")
+}
+
+///|
+test "normalize_path 处理上级目录" {
+  inspect(normalize_path("a/x/../b.srt"), content="a/b.srt")
+  inspect(normalize_path("a/b/../.."), content="")
+  // 开头的 `..` 没有上一级可退，原样留着；绝对路径上多出来的 `..` 丢掉
+  inspect(normalize_path("../a.srt"), content="../a.srt")
+  inspect(normalize_path("/../a.srt"), content="/a.srt")
+  inspect(normalize_path("/a/b.srt"), content="/a/b.srt")
+}
+
+///|
+test "same_path 认得指同一个文件的不同写法" {
+  inspect(same_path("./a.srt", "a.srt"), content="true")
+  inspect(same_path("a//b.srt", "a/b.srt"), content="true")
+  inspect(same_path("a/./b.srt", "./a/b.srt"), content="true")
+  inspect(same_path("a/x/../b.srt", "a/b.srt"), content="true")
+  // 真的指向别处时不能被折叠成同一个
+  inspect(same_path("a/b.srt", "a/c.srt"), content="false")
+  inspect(same_path("/a.srt", "a.srt"), content="false")
 }
