@@ -115,7 +115,11 @@ section .desc { margin: 0 0 18px; color: var(--muted); font-size: 15px; max-widt
 }
 .panes.single { grid-template-columns: 1fr; }
 .panes.single figure { max-width: 660px; }
-@media (max-width: 760px) { .panes { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .panes { grid-template-columns: 1fr; }
+  .wrap { padding: 36px 16px 64px; }
+  .hero h1 { font-size: 25px; }
+}
 
 figure {
   margin: 0;
@@ -123,6 +127,7 @@ figure {
   border-radius: 8px;
   overflow: hidden;
   background: var(--code);
+  min-width: 0;
 }
 figcaption {
   font-family: var(--mono);
