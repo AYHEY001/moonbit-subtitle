@@ -61,6 +61,32 @@ test "容错解析" {
 }
 ```
 
+## 结构不对的块会被拒绝
+
+宽容有边界。**空行是 SRT 的块分隔符**，一个块的开头必须先是序号行 ——
+不是的话按块号报错，不会去猜"这块是不是上一条的续行"。
+
+```mbt check
+///|
+test "空行分隔的块会被拒绝" {
+  // 同一句要分两行：写在同一块里换行
+  let proper = "1\n00:00:01,000 --> 00:00:04,000\n第一行\n第二行\n"
+  let ok = match @moonbit-subtitle.parse_srt(proper) {
+    Ok(s) => s.cues[0].text
+    Err(_) => ""
+  }
+  inspect(ok, content="第一行\n第二行")
+  // 中间打了空行就不行 —— 播放器读到没有序号行的块会整块丢掉，
+  // 本库跟着丢掉这个猜测才和播放器一致
+  let broken = "1\n00:00:01,000 --> 00:00:04,000\n第一行\n\n第二行\n"
+  let msg = match @moonbit-subtitle.parse_srt(broken) {
+    Ok(_) => ""
+    Err(msg) => msg
+  }
+  inspect(msg.contains("第 2 块"), content="true")
+}
+```
+
 ## 排版设置
 
 时间行右侧的设置收进 `Cue::settings`，写回时只认同一种格式的键名。
