@@ -54,7 +54,8 @@ moon run cmd/main -- info examples/messy.srt
 
 六组输入输出对照收在 [`demo.html`](demo.html) 里，覆盖这份脏文件的解析与规范化、
 跨格式转换、非字幕块与文件头的保留、剥标记，以及非 UTF-8 输入的报错。
-单文件，没有外部依赖，下载后用浏览器打开。
+单文件，没有外部依赖，下载后用浏览器打开，或直接看线上版：
+https://ayhey001.github.io/moonbit-subtitle/demo.html
 
 开发用的几条命令：
 
