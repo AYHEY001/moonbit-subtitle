@@ -46,7 +46,12 @@ pub struct ExtraBlock {
 }
 
 ///|
-/// 一份字幕，按开始时间升序排列。
+/// 一份字幕。
+///
+/// `cues` 的顺序就是文件里的顺序 —— `parse_srt` / `parse_vtt` 都不排序。
+/// 手工改过的字幕里时间顺序和文件顺序经常对不上，这是常态而不是异常，
+/// 所以别把"按开始时间升序"当成前提。需要升序就显式调 `normalize`。
+/// `duration_ms` 这类按位置取值的接口都以"已经排好序"为前提。
 ///
 /// `extras` 只在 WebVTT 里有内容。SRT 没有对应的语法，解析出来永远是空数组，
 /// 渲染成 SRT 时也会被丢掉 —— 格式里没有地方放它们。
@@ -327,6 +332,11 @@ pub fn Subtitle::normalize(self : Subtitle) -> Subtitle {
 
 ///|
 /// 总时长，取最后一条 cue 的结束时间。空字幕返回 0。
+///
+/// **前提是 cues 已经按开始时间升序。** 解析出来的字幕不保证这一点，
+/// 乱序文件里"最后一条"未必结束得最晚。遇到那种文件，先 `normalize`，
+/// 或者自己遍历一遍取最大的结束时间 —— 命令行 `info` 报的就是后者
+/// （见 `span_of`），所以同一个文件在库和命令行两边可能给出不同的数。
 pub fn Subtitle::duration_ms(self : Subtitle) -> Int {
   match self.cues.last() {
     Some(c) => c.end_ms
