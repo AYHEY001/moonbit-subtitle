@@ -33,7 +33,7 @@ fn build_command() -> @argparse.Command {
   @argparse.Command(
     "moonbit-subtitle",
     about="本地处理 SRT / WebVTT 字幕：查看信息、平移时间轴、规范化、格式转换、剥标记",
-    version="0.2.0",
+    version="0.2.1",
     subcommands=[
       @argparse.Command(
         "info",
